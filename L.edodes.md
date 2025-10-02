@@ -296,6 +296,7 @@ library(tximport)
 library(dplyr)
 library(tidyr)
 library(readr)
+library(tximport)
 
 s2c <- read.table("sample2condition.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 s2c$group <- gsub(" ", "_", s2c$group)
@@ -345,7 +346,6 @@ write.table(final_df, file = "annotbl.txt", sep = "\t", quote = FALSE, row.names
 library(DESeq2)
 library(tidyverse)
 library(ggplot2)
-library(tximport)
 
 sampleTable <- data.frame(condition=s2c$group)
 rownames(sampleTable) <- colnames(txi$counts)
