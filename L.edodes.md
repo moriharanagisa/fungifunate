@@ -345,6 +345,7 @@ write.table(final_df, file = "annotbl.txt", sep = "\t", quote = FALSE, row.names
 library(DESeq2)
 library(tidyverse)
 library(ggplot2)
+library(tximport)
 
 sampleTable <- data.frame(condition=s2c$group)
 rownames(sampleTable) <- colnames(txi$counts)
