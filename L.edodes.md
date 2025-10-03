@@ -339,7 +339,13 @@ go_annotated_df <- read.table("go_annotated_results.tsv",
 
 colnames(go_annotated_df)[1] <- "Gene"
 final_df <- left_join(go_annotated_df, selected_genes, by = "Gene")
-# write.table(final_df, file = "ggsearch-interpro-GO-CS_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
+
+tpm_wide <- tpm %>% 
+  dplyr::rename_with(~ paste0("TPM_", .x), -Gene)
+
+final_df_with_TPM <- final_df %>%
+  dplyr::left_join(tpm_wide, by = "Gene")
+# write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-CS-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## DEGs
 ```R
@@ -376,25 +382,28 @@ for (comp in comparisons) {
 annot_expr <- read.table("annotbl.txt",
                          sep="\t", header=TRUE, stringsAsFactors=FALSE, fill=TRUE)
 
+annot_expr <- final_df_with_TPM
+
 de_files <- list(
-  primordia_vs_mycelia     = "deseq2-primordia-vs-mycelia.txt",
-  fruiting_vs_primordia    = "deseq2-fruiting_body-vs-primordia.txt",
-  mycelia_vs_fruiting      = "deseq2-mycelia-vs-fruiting_body.txt"
+  primordia_vs_mycelia  = "deseq2-primordia-vs-mycelia.txt",
+  fruiting_vs_primordia = "deseq2-fruiting_body-vs-primordia.txt",
+  mycelia_vs_fruiting   = "deseq2-mycelia-vs-fruiting_body.txt"
 )
 
 for (name in names(de_files)) {
-  res <- read.table(de_files[[name]], sep="\t", header=TRUE, stringsAsFactors=FALSE)
-  res$Gene <- rownames(res)
+  res <- read.table(de_files[[name]], sep = "\t", header = TRUE,
+                    stringsAsFactors = FALSE, check.names = FALSE)
+  if (!"Gene" %in% colnames(res)) {
+    res$Gene <- rownames(res)
+  }
   df_sub <- res[, c("Gene", "log2FoldChange", "padj")]
   colnames(df_sub) <- c("Gene",
                         paste0("log2FC_", name),
-                        paste0("padj_", name))
-  annot_expr <- left_join(annot_expr, df_sub, by="Gene")
+                        paste0("padj_",   name))
+  annot_expr <- dplyr::left_join(annot_expr, df_sub, by = "Gene")
 }
 
-write.table(annot_expr,
-            file="annotbl_with_DEGs.txt",
-            sep="\t", quote=FALSE, row.names=FALSE)
+write_table(annot_expr, "annotbl_with_DEGs.txt", na = "")
 ```
 ## Benn Diagram
 ```
@@ -426,15 +435,18 @@ x <- list(
 venn_plot <- ggVennDiagram(
   x[1:3], label_alpha = 0
 ) +
-  scale_fill_gradient(low = "white", high = "turquoise") +
+  scale_fill_gradient(low = "white", high = "grey60") +
   theme_void() +
   theme(
+    text = element_text(size = 12),         
+    legend.text  = element_text(size = 11),
+    legend.title = element_text(size = 12),
     plot.margin = unit(c(2, 2, 2, 2), "cm"),
     panel.background = element_rect(fill = "white", colour = NA),
     plot.background  = element_rect(fill = "white", colour = NA)
   ) +
-  coord_cartesian(clip = "off") +                                  
-  scale_x_continuous(expand = expansion(mult = 0.08)) +             
+  coord_cartesian(clip = "off") +
+  scale_x_continuous(expand = expansion(mult = 0.08)) +
   scale_y_continuous(expand = expansion(mult = 0.08))
 
 ggsave("venn_padj1e-10.png", venn_plot, width = 7, height = 6.5, dpi = 300)
