@@ -159,8 +159,7 @@ ggsearch_data$fungidb.2 <- NULL
 df <- ggsearch_data %>%
   left_join(interpro_top1, by = "Node")
 
-# write.table(df, "annotbl.txt", sep = "\t",
-#            row.names = FALSE, quote = FALSE)
+# write.table(df, "ggsearch-interpro_annotbl.txt", sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 ```
 ## add GO term
 ```
