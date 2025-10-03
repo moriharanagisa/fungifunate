@@ -350,8 +350,9 @@ library(ggplot2)
 sampleTable <- data.frame(condition=s2c$group)
 rownames(sampleTable) <- colnames(txi$counts)
 dds <- DESeqDataSetFromTximport(txi, sampleTable, ~condition)
-dds <- dds[rowSums(counts(dds) >= 5) >= 5, ] # Optional:Low-expression genes will also be filtered in the next step
+# dds_5 <- dds[rowSums(counts(dds) >= 5) >= 5, ] # Optional:Low-expression genes will also be filtered in the next step
 dds_wt <- DESeq(dds)
+# dds_wt_5 <- DESeq(dds_5) # for PCA
 
 comparisons <- list(
   list(c("condition", "primordia", "mycelia"), "deseq2-primordia-vs-mycelia.txt"),
@@ -466,6 +467,7 @@ write.table(annot_df,
 ## PCA plot
 ```
 vsd <- vst(dds_wt, blind = FALSE)
+vsd_5 <- vst(dds_wt_5, blind = FALSE)
 
 # Use this when utilizing the built-in functions of DESeq2
 png("DESeq2_PCA_plot.png", width = 1200, height = 1000, res = 150)
@@ -473,7 +475,7 @@ plotPCA(vsd, intgroup = "condition")
 dev.off()
 
 # The following is the customized version used in this analysis.
-vsd_mat <- assay(vsd)              
+vsd_mat <- assay(vsd_5)              
 vsd_df <- t(vsd_mat) %>% as.data.frame()
 vsd_df <- vsd_df %>% mutate(Sample = rownames(vsd_df))
 pca_input <- vsd_df %>% left_join(meta, by = c("Sample" = "Run"))
@@ -489,9 +491,9 @@ explained_var <- pca_result$sdev^2
 explained_var_percent <- explained_var / sum(explained_var) * 100
 
 large_group_colors <- c(
-  "mycelia" = "#0072B2",      # blue
-  "primordia" = "#E69F00",    # orange
-  "fruiting_body" = "#009E73" # green
+  "mycelia" = "#009E73",      # green
+  "primordia" = "#0072B2",    # blue
+  "fruiting_body" = "#D55E00" # orange
 )
 
 group_shapes <- c(
@@ -508,8 +510,8 @@ group_shapes <- c(
 pca_scores$Group <- factor(pca_scores$Group, levels = names(group_shapes))
 pca_scores$LargeGroup <- factor(pca_scores$LargeGroup, levels = names(large_group_colors))
 p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = LargeGroup, shape = Group)) +
-  geom_point(size = 3) +
-  theme_minimal() +
+  geom_point(size = 4.2, stroke = 0.8) +                     
+  theme_minimal(base_size = 12) +                             
   labs(
     x = sprintf("PC1 (%.2f%%)", explained_var_percent[1]),
     y = sprintf("PC2 (%.2f%%)", explained_var_percent[2])
@@ -517,13 +519,16 @@ p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = LargeGroup, shape = Group)
   scale_color_manual(values = large_group_colors) +
   scale_shape_manual(values = group_shapes) +
   theme(
-    legend.position = "right",
-    legend.title = element_text(size = 10),
-    legend.text = element_text(size = 8)
+    axis.title  = element_text(size = 14),
+    axis.text   = element_text(size = 12),
+    legend.title= element_text(size = 12),
+    legend.text = element_text(size = 11),
+    legend.key.size = unit(0.7, "cm")                        
   ) +
-  labs(color = "Large Group", shape = "Group")
+  guides(color = guide_legend(override.aes = list(size = 4.2)),
+         shape = guide_legend(override.aes = list(size = 4.2)))
 
-ggsave("pca_plot_large_group_shape.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 300, bg = "white")
+ggsave("PCA_plot.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 300, bg = "white")
 ```
 ## TopGO
 ```
