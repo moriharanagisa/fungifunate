@@ -190,6 +190,7 @@ add_go_terms_ensembl_pep <- function(df, id_col, mart_dataset, species_colname) 
 
 df <- add_go_terms_ensembl_pep(df, id_col = "human", mart_dataset = "hsapiens_gene_ensembl", species_colname = "human")
 df <- add_go_terms_ensembl_pep(df, id_col = "mouse", mart_dataset = "mmusculus_gene_ensembl", species_colname = "mouse")
+df <- dplyr::select(df, -dplyr::starts_with("clean_"))
 
 # yeast
 add_go_terms_ensembl_gene <- function(df, id_col, mart_dataset, species_colname) {
@@ -274,7 +275,7 @@ df <- df %>%
     GO_from_InterPro_IDs = tidyr::replace_na(GO_from_InterPro_IDs, "")
   ) %>%
   dplyr::select(-.rowid)
-write_tsv(df, "annotbl.txt")
+# write_tsv(df, "ggsearch-interpro-GO_annotbl.txt", na = "")
 ```
 ## Quantification
 ```bash
@@ -338,7 +339,7 @@ go_annotated_df <- read.table("go_annotated_results.tsv",
 
 colnames(go_annotated_df)[1] <- "Gene"
 final_df <- left_join(go_annotated_df, selected_genes, by = "Gene")
-write.table(final_df, file = "annotbl.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+# write.table(final_df, file = "ggsearch-interpro-GO-CS_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## DEGs
 ```R
