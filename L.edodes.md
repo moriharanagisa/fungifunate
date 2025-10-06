@@ -333,18 +333,12 @@ selected_genes <- tpm_annotated %>%
   ) %>%
   dplyr::select(Gene, expressed_group, meanTPM)
 
-go_annotated_df <- read.table("go_annotated_results.tsv",
-                              sep = "\t", header = TRUE,
-                              stringsAsFactors = FALSE, fill = TRUE)
-
-colnames(go_annotated_df)[1] <- "Gene"
-final_df <- left_join(go_annotated_df, selected_genes, by = "Gene")
+final_df <- left_join(df, selected_genes, by = c("Node" = "Gene"))
 
 tpm_wide <- tpm %>% 
   dplyr::rename_with(~ paste0("TPM_", .x), -Gene)
 
-final_df_with_TPM <- final_df %>%
-  dplyr::left_join(tpm_wide, by = "Gene")
+final_df_with_TPM <- left_join(final_df, tpm_wide, by = c("Node" = "Gene"))
 # write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-CS-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## DEGs
@@ -379,11 +373,6 @@ for (comp in comparisons) {
 #deseq2-fruiting_body-vs-primordia-e-10 1,739 transcripts
 #deseq2-mycelia-vs-fruiting_body-e-10 3,801 transcripts
 
-annot_expr <- read.table("annotbl.txt",
-                         sep="\t", header=TRUE, stringsAsFactors=FALSE, fill=TRUE)
-
-annot_expr <- final_df_with_TPM
-
 de_files <- list(
   primordia_vs_mycelia  = "deseq2-primordia-vs-mycelia.txt",
   fruiting_vs_primordia = "deseq2-fruiting_body-vs-primordia.txt",
@@ -400,10 +389,12 @@ for (name in names(de_files)) {
   colnames(df_sub) <- c("Gene",
                         paste0("log2FC_", name),
                         paste0("padj_",   name))
-  annot_expr <- dplyr::left_join(annot_expr, df_sub, by = "Gene")
+  df_sub <- dplyr::distinct(df_sub, Gene, .keep_all = TRUE) 
+
+  final_df_with_DEGs <- dplyr::left_join(final_df_with_DEGs, df_sub, by = c("Node" = "Gene"))
 }
 
-write_table(annot_expr, "annotbl_with_DEGs.txt", na = "")
+write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## Benn Diagram
 ```
@@ -411,20 +402,20 @@ library(ggVennDiagram)
 library(grid)      
 
 alpha_thr <- 1e-10
-set_primordia_vs_mycelia <- annot_expr %>%
+set_primordia_vs_mycelia <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_primordia_vs_mycelia),
                 padj_primordia_vs_mycelia <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
-set_fruiting_vs_primordia <- annot_expr %>%
+set_fruiting_vs_primordia <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_fruiting_vs_primordia),
                 padj_fruiting_vs_primordia <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
-set_mycelia_vs_fruiting <- annot_expr %>%
+set_mycelia_vs_fruiting <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_mycelia_vs_fruiting),
                 padj_mycelia_vs_fruiting <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
 x <- list(
   "Primordia vs Mycelia"   = set_primordia_vs_mycelia,
@@ -452,13 +443,13 @@ venn_plot <- ggVennDiagram(
 ggsave("venn_padj1e-10.png", venn_plot, width = 7, height = 6.5, dpi = 300)
 
 annot_df <- read.delim("annotbl_with_DEGs.txt", stringsAsFactors = FALSE)
-if (!"Gene" %in% colnames(annot_df) && !is.null(rownames(annot_df))) {
-  annot_df$Gene <- rownames(annot_df)
+if (!"Node" %in% colnames(annot_df) && !is.null(rownames(annot_df))) {
+  annot_df$Node <- rownames(annot_df)
 }
 
-in_A <- annot_df$Gene %in% x$primordia_vs_mycelia
-in_B <- annot_df$Gene %in% x$fruiting_body_vs_primordia
-in_C <- annot_df$Gene %in% x$mycelia_vs_fruiting_body
+in_A <- annot_df$Node %in% x$primordia_vs_mycelia
+in_B <- annot_df$Node %in% x$fruiting_body_vs_primordia
+in_C <- annot_df$Node %in% x$mycelia_vs_fruiting_body
 
 annot_df$only_A          <-  in_A & !in_B & !in_C
 annot_df$only_B          <- !in_A &  in_B & !in_C
