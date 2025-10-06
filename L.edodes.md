@@ -401,7 +401,7 @@ write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "
 library(ggVennDiagram)
 library(grid)      
 
-alpha_thr <- 1e-10
+alpha_thr <- 1e-9
 set_primordia_vs_mycelia <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_primordia_vs_mycelia),
                 padj_primordia_vs_mycelia <= alpha_thr) %>%
