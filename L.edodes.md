@@ -369,9 +369,9 @@ for (comp in comparisons) {
   write.table(res_sorted, outfile, sep = "\t", quote = FALSE)
 }
 
-#deseq2-primordia_body-vs-mycelia-e-10 1,926 transcripts
-#deseq2-fruiting_body-vs-primordia-e-10 1,739 transcripts
-#deseq2-mycelia-vs-fruiting_body-e-10 3,801 transcripts
+#deseq2-primordia_body-vs-mycelia-e-9 1,926 transcripts
+#deseq2-fruiting_body-vs-primordia-e-9 1,739 transcripts
+#deseq2-mycelia-vs-fruiting_body-e-9 3,801 transcripts
 
 de_files <- list(
   primordia_vs_mycelia  = "deseq2-primordia-vs-mycelia.txt",
