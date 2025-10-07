@@ -440,32 +440,21 @@ venn_plot <- ggVennDiagram(
   scale_x_continuous(expand = expansion(mult = 0.08)) +
   scale_y_continuous(expand = expansion(mult = 0.08))
 
-ggsave("venn_padj1e-10.png", venn_plot, width = 7, height = 6.5, dpi = 300)
+ggsave("venn_padj1e-9.png", venn_plot, width = 7, height = 6.5, dpi = 300)
 
-annot_df <- read.delim("annotbl_with_DEGs.txt", stringsAsFactors = FALSE)
-if (!"Node" %in% colnames(annot_df) && !is.null(rownames(annot_df))) {
-  annot_df$Node <- rownames(annot_df)
-}
+in_A <- final_df_with_DEGs$Node %in% x[["Primordia vs Mycelia"]]
+in_B <- final_df_with_DEGs$Node %in% x[["Fruiting body vs Primordia"]]
+in_C <- final_df_with_DEGs$Node %in% x[["Mycelia vs Fruiting body"]]
 
-in_A <- annot_df$Node %in% x$primordia_vs_mycelia
-in_B <- annot_df$Node %in% x$fruiting_body_vs_primordia
-in_C <- annot_df$Node %in% x$mycelia_vs_fruiting_body
+final_df_with_DEGs$only_A          <-  in_A & !in_B & !in_C
+final_df_with_DEGs$only_B          <- !in_A &  in_B & !in_C
+final_df_with_DEGs$only_C          <- !in_A & !in_B &  in_C
+final_df_with_DEGs$A_and_B         <-  in_A &  in_B & !in_C
+final_df_with_DEGs$A_and_C         <-  in_A & !in_B &  in_C
+final_df_with_DEGs$B_and_C         <- !in_A &  in_B &  in_C
+final_df_with_DEGs$A_and_B_and_C   <-  in_A &  in_B &  in_C
 
-annot_df$only_A          <-  in_A & !in_B & !in_C
-annot_df$only_B          <- !in_A &  in_B & !in_C
-annot_df$only_C          <- !in_A & !in_B &  in_C
-annot_df$A_and_B         <-  in_A &  in_B & !in_C
-annot_df$A_and_C         <-  in_A & !in_B &  in_C
-annot_df$B_and_C         <- !in_A &  in_B &  in_C
-annot_df$A_and_B_and_C   <-  in_A &  in_B &  in_C
-
-annot_df$in_A <- in_A
-annot_df$in_B <- in_B
-annot_df$in_C <- in_C
-
-write.table(annot_df,
-            file = "annotbl_with_DEGs.txt",
-            sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## PCA plot
 ```
@@ -538,20 +527,22 @@ ggsave("PCA_plot.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 3
 ##topGO
 library(topGO)
 library(tidyverse)
-df <- read.table("annotbl_with_DEGs.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-go_columns <- c("human_GO", "mouse_GO", "yeast_GO", "uniprot_GO", "interproscan_GO")
+library(Rgraphviz)
+
+# each GO
+go_columns <- c("GO_human", "GO_mouse", "GO_yeast", "GO_uniprot", "GO_from_InterPro_IDs")
 for (go_col in go_columns) {
   message("Running topGO for: ", go_col)
-  df_bg <- df %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
+  df_bg <- final_df_with_DEGs %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
   gene2go <- df_bg %>%
-    dplyr::select(query_id, GO = all_of(go_col)) %>%
+    dplyr::select(Node, GO = all_of(go_col)) %>%
     dplyr::mutate(GO_list = strsplit(GO, ";")) %>%
     tidyr::unnest(GO_list)
-  gene2GO_map <- split(gene2go$GO_list, gene2go$query_id)
-  all_genes <- unique(df_bg$query_id)
-  sig_genes <- df %>%
-    filter(onlyA == TRUE & query_id %in% all_genes) %>%
-    pull(query_id)
+  gene2GO_map <- split(gene2go$GO_list, gene2go$Node)
+  all_genes <- unique(df_bg$Node)
+  sig_genes <- final_df_with_DEGs %>%
+    filter(only_A == TRUE & Node %in% all_genes) %>%
+    pull(Node)
   geneList <- factor(as.integer(all_genes %in% sig_genes))
   names(geneList) <- all_genes
   GOdata <- new("topGOdata",
@@ -563,8 +554,67 @@ for (go_col in go_columns) {
   resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
   allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 20)
   print(allRes)
-  output_file <- paste0("topGO_Fisher_result_", go_col, "_onlyA.tsv")
+  output_file <- paste0("topGO_Fisher_result_", go_col, "_only_A.tsv")
   write.table(allRes, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
 }
+
+# all GO
+gene2go_long <- final_df_with_DEGs %>%
+  pivot_longer(cols = all_of(go_columns), names_to = "source", values_to = "GO") %>%
+  filter(!is.na(GO), GO != "") %>%
+  mutate(GO_list = strsplit(GO, ";")) %>%
+  unnest(GO_list) %>%
+  mutate(GO_list = str_trim(GO_list)) %>%
+  filter(GO_list != "") %>%
+  distinct(Node, GO_list)
+
+all_genes <- unique(gene2go_long$Node)
+gene2GO_map <- split(gene2go_long$GO_list, gene2go_long$Node)
+gene2GO_map <- lapply(gene2GO_map, unique)
+
+sig_genes <- final_df_with_DEGs %>%
+  filter(only_A == TRUE, Node %in% all_genes) %>%
+  pull(Node) %>%
+  unique()
+
+geneList <- factor(as.integer(all_genes %in% sig_genes))
+names(geneList) <- all_genes
+
+GOdata <- new("topGOdata",
+              ontology = "BP",
+              allGenes = geneList,
+              annot = annFUN.gene2GO,
+              gene2GO = gene2GO_map)
+
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+
+allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200)
+
+print(head(allRes, 20))
+write.table(allRes, file = "topGO_Fisher_result_mergedGO_onlyA.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+
+scores <- score(resultFisher) 
+png("topGO_graph_classicFisher.png", width = 1600, height = 1200, res = 180)
+showSigOfNodes(GOdata, scores, firstSigNodes = 15, useInfo = "all")
+dev.off()
+
+plot_df <- allRes %>%
+  mutate(P = as.numeric(classicFisher)) %>%
+  filter(!is.na(P)) %>%
+  arrange(P) %>%                     
+  distinct(Term, .keep_all = TRUE) %>%  
+  slice_head(n = 20) %>%
+  mutate(Term = factor(Term, levels = rev(Term)))  
+
+p <- ggplot(plot_df, aes(x = Term, y = -log10(P))) +
+  geom_col() +
+  coord_flip() +
+  labs(x = NULL, y = expression(-log[10](italic(p)))) +
+  theme_minimal(base_size = 12)
+
+ggsave("topGO_barplot_classicFisher_top20.png",
+       plot = p,
+       width = 8, height = 6, dpi = 300)
 ```
 
