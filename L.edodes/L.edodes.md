@@ -587,7 +587,7 @@ GOdata <- new("topGOdata",
               gene2GO = gene2GO_map)
 
 resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-
+# resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
 allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200)
 
 print(head(allRes, 20))
