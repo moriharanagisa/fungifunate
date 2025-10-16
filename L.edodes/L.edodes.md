@@ -573,7 +573,7 @@ gene2GO_map <- split(gene2go_long$GO_list, gene2go_long$Node)
 gene2GO_map <- lapply(gene2GO_map, unique)
 
 sig_genes <- final_df_with_DEGs %>%
-  filter(only_A == TRUE, Node %in% all_genes) %>%
+  filter(only_B == TRUE, Node %in% all_genes) %>%
   pull(Node) %>%
   unique()
 
@@ -590,15 +590,126 @@ resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
 # resultFisher <- runTest(GOdata, algorithm="elim",     statistic="fisher")
 # resultFisher <- runTest(GOdata, algorithm="weight01", statistic="fisher")
 
-allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200)
+allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200, numChar = 1000)
 
 print(head(allRes, 20))
-write.table(allRes, file = "topGO_elim_result_mergedGO_onlyA.tsv",
+write.table(allRes, file = "topGO_weight01_result_mergedGO_onlyA.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
 
 scores <- score(resultFisher) 
-png("topGO_graph_classicFisher.png", width = 1600, height = 1200, res = 180)
-showSigOfNodes(GOdata, scores, firstSigNodes = 10, useInfo = "all")
+png("topGO_graph_weight01Fisher.png", width = 1600, height = 1200, res = 1200)
+showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
+dev.off()
+
+# dot plot
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(dplyr)
+  library(stringr)
+})
+
+res_classic  <- runTest(GOdata, algorithm = "classic",  statistic = "fisher")
+res_elim     <- runTest(GOdata, algorithm = "elim",     statistic = "fisher")
+res_weight01 <- runTest(GOdata, algorithm = "weight01", statistic = "fisher")
+
+crRes <- GenTable(GOdata, classicFisher = res_classic, topNodes = 200, numChar = 1000)
+elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200, numChar = 1000)
+weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200, numChar = 1000)
+
+topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
+                          top_n = 20, label_wrap = 40,
+                          width = 8, height = 6, dpi = 300,
+                          outfile = NULL) {
+
+  tab <- GenTable(
+    GOdata,
+    Pvalue = result_obj,
+    topNodes = max(200, top_n) ,
+    numChar = 1000
+  )
+
+  df <- tab %>%
+    mutate(
+      Pvalue_num  = suppressWarnings(as.numeric(Pvalue)),
+      Annotated   = as.numeric(Annotated),
+      Significant = as.numeric(Significant),
+      GeneRatio   = Significant / pmax(Annotated, 1),      
+      Term_wrapped = str_wrap(Term, width = label_wrap)
+    ) %>%
+    filter(is.finite(Pvalue_num)) %>%
+    arrange(Pvalue_num) %>%       
+    slice_head(n = top_n) %>%
+    mutate(Term_wrapped = factor(Term_wrapped, levels = rev(Term_wrapped)))
+
+  if (nrow(df) == 0) {
+    message("[", method_label, "] No significant terms were found")
+    return(invisible(NULL))
+  }
+
+  p <- ggplot(df, aes(x = GeneRatio, y = Term_wrapped)) +
+    geom_point(aes(size = Significant, color = -log10(Pvalue_num))) +
+    scale_size_continuous(name = "Significant") +
+    scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
+    labs(
+      x = "GeneRatio (Significant / Annotated)",
+      y = NULL,
+      title = paste0("topGO dotplot (", method_label, ")")
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      axis.text.y = element_text(size = 7)
+    )
+
+  if (is.null(outfile)) {
+    outfile <- paste0("topGO_dotplot_", method_label, ".png")
+  }
+  ggsave(outfile, plot = p, width = width, height = height, dpi = dpi, bg = "white")
+  message("Saved: ", outfile)
+
+  invisible(list(table = df, plot = p, file = outfile))
+}
+
+topgo_dotplot(GOdata, res_classic,  method_label = "classic",  outfile = "topGO_dotplot_classic.png")
+topgo_dotplot(GOdata, res_elim,     method_label = "elim",     outfile = "topGO_dotplot_elim.png")
+topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_dotplot_weight01.png")
+
+```
+## Blast2GO
+```
+diamond blastp -d ../../nr-2024 -q transcripts.fasta.transdecoder_dir/longest_orfs.pep -o shiitake_orf-blastp.xml -p 96 -f 5 -k 1 &<br>
+# blasted → 150,402, GO annotated → 17,594
+## topGO
+data <- read.delim("blast2go-topGO.txt", stringsAsFactors = FALSE)
+data$GO_IDs_clean <- gsub("(C:|P:|F:)", "", data$GO.IDs)
+data_long <- data %>%
+   separate_rows(GO_IDs_clean, sep = ";\\s*") %>%
+   filter(GO_IDs_clean != "")
+geneID2GO <- tapply(data_long$GO_IDs_clean, data_long$SeqName, unique)
+sigGenes <- data %>%
+  filter(onlyA != "#N/A") %>%
+  pull(SeqName)
+
+allGenes <- unique(data$SeqName) 
+
+geneList <- factor(as.integer(allGenes %in% sigGenes))
+names(geneList) <- allGenes 
+
+GOdata <- new("topGOdata",
+               ontology = "BP", 
+               allGenes = geneList,
+               annot = annFUN.gene2GO,
+               gene2GO = geneID2GO) 
+
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+resultFisher <- runTest(GOdata, algorithm = "elim", statistic = "fisher")
+resultFisher <- runTest(GOdata, algorithm = "weight01", statistic = "fisher")
+
+allRes <- GenTable(GOdata, classicFisher = resultFisher, orderBy = "classicFisher", topNodes = 100, numChar = 1000)
+write.table(allRes, file = "topGO_blast2go_weight01.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+scores <- score(resultFisher) 
+png("topGO_blast2go_weight01Fisher.png", width = 1600, height = 1200, res = 180)
+showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
 dev.off()
 
 # dot plot
@@ -627,7 +738,7 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
   tab <- GenTable(
     GOdata,
     Pvalue = result_obj,
-    topNodes = max(200, top_n) 
+    topNodes = max(200, top_n) , numChar = 1000
   )
 
   df <- tab %>%
@@ -675,38 +786,4 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
 topgo_dotplot(GOdata, res_classic,  method_label = "classic",  outfile = "topGO_dotplot_classic.png")
 topgo_dotplot(GOdata, res_elim,     method_label = "elim",     outfile = "topGO_dotplot_elim.png")
 topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_dotplot_weight01.png")
-
-```
-## Blast2GO
-```
-diamond blastp -d ../../nr-2024 -q transcripts.fasta.transdecoder_dir/longest_orfs.pep -o shiitake_orf-blastp.xml -p 96 -f 5 -k 1 &<br>
-# blasted → 150,402, GO annotated → 17,594
-## topGO
-data <- read.delim("blast2go-topGO.txt", stringsAsFactors = FALSE)
-data$GO_IDs_clean <- gsub("(C:|P:|F:)", "", data$GO.IDs)
-data_long <- data %>%
-   separate_rows(GO_IDs_clean, sep = ";\\s*") %>%
-   filter(GO_IDs_clean != "")
-geneID2GO <- tapply(data_long$GO_IDs_clean, data_long$SeqName, unique)
-sigGenes <- data %>%
-  filter(onlyA != "#N/A") %>%
-  pull(SeqName)
-# 全遺伝子のIDリスト
-allGenes <- unique(data$SeqName) 
-# topGO用のgeneList（有意なら1、それ以外は0）
-geneList <- factor(as.integer(allGenes %in% sigGenes))
-names(geneList) <- allGenes 
-# topGOオブジェクト作成
-GOdata <- new("topGOdata",
-               ontology = "BP", # Biological Process。他に"MF", "CC"も選べます
-               allGenes = geneList,
-               annot = annFUN.gene2GO,
-               gene2GO = geneID2GO,
-               nodeSize = 5) # 無しのも実行
-# Fisher's exact testを実行
-resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-# 上位100個を取得
-allRes <- GenTable(GOdata, classicFisher = resultFisher, orderBy = "classicFisher", topNodes = 100)
-# ファイルに保存
-write.table(allRes, file = "topGO_result_top100.txt", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
