@@ -84,7 +84,7 @@ library(dplyr)
 library(stringr)
 
 interpro_raw <- read.table(
-  "interpro_longest_orfs.tsv",
+  "longest_orfs_cleaned.pep.tsv",
   header = FALSE, sep = "\t", stringsAsFactors = FALSE,
   fill = TRUE, quote = ""   
 )
