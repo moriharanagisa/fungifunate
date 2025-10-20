@@ -551,8 +551,8 @@ topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_
 ```
 ## Blast2GO
 ```
-diamond blastp -d ../../nr-2024 -q transcripts.fasta.transdecoder_dir/longest_orfs.pep -o shiitake_orf-blastp.xml -p 96 -f 5 -k 1 &<br>
-# blasted → 150,402, GO annotated → 17,594
+diamond blastp -d ../nr-2024 -q P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep -o P.pachyrhizi_orf-blastp.xml -p 96 -f 5 -k 1 &
+# blasted → 7,774, GO annotated → 1,895 (ここまで変更)
 ## topGO
 data <- read.delim("blast2go-topGO.txt", stringsAsFactors = FALSE)
 data$GO_IDs_clean <- gsub("(C:|P:|F:)", "", data$GO.IDs)
