@@ -268,31 +268,23 @@ done
 ```
 ## Add TPM
 ```R
+library(tximport)
 library(dplyr)
 library(tidyr)
 library(readr)
-library(purrr)
+library(tibble)
 
-sample_numbers <- 10130097:10130116
-sample_names <- sprintf("SRR%d", sample_numbers)
-file_paths <- sprintf("salmon-%s.sf", sample_names)
-samples <- data.frame(
-  sample = sample_names,
-  path = file_paths
-)
-
-sample_data_list <- samples %>%
-  mutate(data = map2(path, sample, ~ read.csv(.x, sep = "\t") %>%
-                      select(Name, TPM) %>%
-                      setNames(c("Name", .y)))) %>%
-  pull(data)
-
-combined_data <- reduce(sample_data_list, full_join, by = "Name")
-tpm_wide <- combined_data %>% 
-  dplyr::rename_with(~ paste0("TPM_", .x), -Name)
-
-final_df_with_TPM <- left_join(df, tpm_wide, by = c("Node" = "Name"))
-# write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
+s2c <- read.table("sample2condition.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
+s2c$group <- gsub(" ", "_", s2c$group)
+files <- s2c$path
+names(files) <- s2c$sample
+txi <- tximport(files, type = "salmon", txOut = TRUE)
+txi$length[txi$length == 0] <- 1
+tpm <- as.data.frame(txi$abundance) %>%
+  rownames_to_column(var = "Name")
+colnames(tpm)[colnames(tpm) != "Name"] <- paste0("TPM_", colnames(tpm)[colnames(tpm) != "Name"])
+tpm <- tpm %>% distinct(Name, .keep_all = TRUE)
+df <- df %>% left_join(tpm, by = c("Node" = "Name"))
 ```
 ## DEGs
 ```R
