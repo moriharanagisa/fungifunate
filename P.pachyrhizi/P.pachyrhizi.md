@@ -5,7 +5,6 @@ A **Docker-based Ubuntu environment** was used unless otherwise specified for in
 
 ## Iso-seq sequences
 - GenBank accessions: `GHWK00000000`, `GHWL00000000`
-<img width="325" height="456" alt="image" src="https://github.com/user-attachments/assets/105dd85a-d89e-4428-a61e-b4ad34fbb55e" />
 
 ```bash
 cat GHWK01.1.fsa_nt GHWL01.1.fsa_nt > P.pachyrhizi-IsoSeq.fasta
