@@ -66,12 +66,12 @@ time ggsearch36 -Q -T 8 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transd
 
 # InterProScan
 # Remove asterisks (*) at the end of amino acid sequences from the FASTA file
-sed 's/\*//g' transcripts.fasta.transdecoder_dir/longest_orfs.pep > longest_orfs_cleaned.pep
+sed 's/\*//g' ../P.pachyrhizi/P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep > longest_orfs_cleaned.pep
 # Run InterProScan
 wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz
 tar -pxvzf interproscan-5.67-99.0-*-bit.tar.gz
 python3 setup.py -f interproscan.properties
-./interproscan.sh -i ../output/longest_orfs_cleaned.pep -f tsv #130,603個
+./interproscan.sh -i ./longest_orfs_cleaned.pep -f tsv
 ./interproscan.sh -i longest_orfs_cleaned.pep -f tsv --goterms
 ```
 ## annotation table
@@ -82,7 +82,6 @@ for file in ggsearch-*.txt; do cat "$file" | perl 15parseggsearch.pl > "${file%.
 
 # make annotation table
 cat longest_orf-pid.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-human-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-mouse-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-S.cerevisiae-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-uniprot-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-fungidb-parsing.txt > ggsearch_P.pachyrhizi_annotbl.txt
-
 
 # add InterProScan
 R
@@ -141,8 +140,7 @@ ggsearch_data$fungidb.2 <- NULL
 df <- ggsearch_data %>%
   left_join(interpro_top1, by = "Node")
 
-# write.table(df, "annotbl.txt", sep = "\t",
-#            row.names = FALSE, quote = FALSE)
+# write.table(df, "ggsearch-interpro_annotbl.txt", sep = "\t", quote = FALSE, row.names = FALSE, na = "")
 ```
 ## add GO term
 ```
@@ -173,6 +171,7 @@ add_go_terms_ensembl_pep <- function(df, id_col, mart_dataset, species_colname) 
 
 df <- add_go_terms_ensembl_pep(df, id_col = "human", mart_dataset = "hsapiens_gene_ensembl", species_colname = "human")
 df <- add_go_terms_ensembl_pep(df, id_col = "mouse", mart_dataset = "mmusculus_gene_ensembl", species_colname = "mouse")
+df <- dplyr::select(df, -dplyr::starts_with("clean_"))
 
 # yeast
 add_go_terms_ensembl_gene <- function(df, id_col, mart_dataset, species_colname) {
@@ -257,7 +256,7 @@ df <- df %>%
     GO_from_InterPro_IDs = tidyr::replace_na(GO_from_InterPro_IDs, "")
   ) %>%
   dplyr::select(-.rowid)
-write_tsv(df, "annotbl.txt")
+# write_tsv(df, "ggsearch-interpro-GO_annotbl.txt", na = "")
 ```
 ## Quantification
 ```bash
@@ -278,6 +277,7 @@ library(tximport)
 library(dplyr)
 library(tidyr)
 library(readr)
+library(tximport)
 
 s2c <- read.table("sample2condition.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
 s2c$group <- gsub(" ", "_", s2c$group)
@@ -314,13 +314,13 @@ selected_genes <- tpm_annotated %>%
   ) %>%
   dplyr::select(Gene, expressed_group, meanTPM)
 
-go_annotated_df <- read.table("go_annotated_results.tsv",
-                              sep = "\t", header = TRUE,
-                              stringsAsFactors = FALSE, fill = TRUE)
+final_df <- left_join(df, selected_genes, by = c("Node" = "Gene"))
 
-colnames(go_annotated_df)[1] <- "Gene"
-final_df <- left_join(go_annotated_df, selected_genes, by = "Gene")
-write.table(final_df, file = "annotbl.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+tpm_wide <- tpm %>% 
+  dplyr::rename_with(~ paste0("TPM_", .x), -Gene)
+
+final_df_with_TPM <- left_join(final_df, tpm_wide, by = c("Node" = "Gene"))
+# write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-CS-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## DEGs
 ```R
@@ -331,8 +331,9 @@ library(ggplot2)
 sampleTable <- data.frame(condition=s2c$group)
 rownames(sampleTable) <- colnames(txi$counts)
 dds <- DESeqDataSetFromTximport(txi, sampleTable, ~condition)
-dds <- dds[rowSums(counts(dds) >= 5) >= 5, ] # Optional:Low-expression genes will also be filtered in the next step
+# dds_5 <- dds[rowSums(counts(dds) >= 5) >= 5, ] # Optional:Low-expression genes will also be filtered in the next step
 dds_wt <- DESeq(dds)
+# dds_wt_5 <- DESeq(dds_5) # for PCA
 
 comparisons <- list(
   list(c("condition", "primordia", "mycelia"), "deseq2-primordia-vs-mycelia.txt"),
@@ -349,53 +350,53 @@ for (comp in comparisons) {
   write.table(res_sorted, outfile, sep = "\t", quote = FALSE)
 }
 
-#deseq2-primordia_body-vs-mycelia-e-10 1,926個とした(低発現遺伝子除去すると1772)
-#deseq2-fruiting_body-vs-primordia-e-10 1,739個 (低発現遺伝子除去すると1871)
-#deseq2-mycelia-vs-fruiting_body-e-10 3,801個 (低発現遺伝子除去すると3666)
-
-annot_expr <- read.table("annotbl.txt",
-                         sep="\t", header=TRUE, stringsAsFactors=FALSE, fill=TRUE)
+#deseq2-primordia_body-vs-mycelia-e-9 1,926 transcripts
+#deseq2-fruiting_body-vs-primordia-e-9 1,739 transcripts
+#deseq2-mycelia-vs-fruiting_body-e-9 3,801 transcripts
 
 de_files <- list(
-  primordia_vs_mycelia     = "deseq2-primordia-vs-mycelia.txt",
-  fruiting_vs_primordia    = "deseq2-fruiting_body-vs-primordia.txt",
-  mycelia_vs_fruiting      = "deseq2-mycelia-vs-fruiting_body.txt"
+  primordia_vs_mycelia  = "deseq2-primordia-vs-mycelia.txt",
+  fruiting_vs_primordia = "deseq2-fruiting_body-vs-primordia.txt",
+  mycelia_vs_fruiting   = "deseq2-mycelia-vs-fruiting_body.txt"
 )
 
 for (name in names(de_files)) {
-  res <- read.table(de_files[[name]], sep="\t", header=TRUE, stringsAsFactors=FALSE)
-  res$Gene <- rownames(res)
+  res <- read.table(de_files[[name]], sep = "\t", header = TRUE,
+                    stringsAsFactors = FALSE, check.names = FALSE)
+  if (!"Gene" %in% colnames(res)) {
+    res$Gene <- rownames(res)
+  }
   df_sub <- res[, c("Gene", "log2FoldChange", "padj")]
   colnames(df_sub) <- c("Gene",
                         paste0("log2FC_", name),
-                        paste0("padj_", name))
-  annot_expr <- left_join(annot_expr, df_sub, by="Gene")
+                        paste0("padj_",   name))
+  df_sub <- dplyr::distinct(df_sub, Gene, .keep_all = TRUE) 
+
+  final_df_with_DEGs <- dplyr::left_join(final_df_with_DEGs, df_sub, by = c("Node" = "Gene"))
 }
 
-write.table(annot_expr,
-            file="annotbl_with_DEGs.txt",
-            sep="\t", quote=FALSE, row.names=FALSE)
+write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## Benn Diagram
 ```
 library(ggVennDiagram)
 library(grid)      
 
-alpha_thr <- 1e-10
-set_primordia_vs_mycelia <- annot_expr %>%
+alpha_thr <- 1e-9
+set_primordia_vs_mycelia <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_primordia_vs_mycelia),
                 padj_primordia_vs_mycelia <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
-set_fruiting_vs_primordia <- annot_expr %>%
+set_fruiting_vs_primordia <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_fruiting_vs_primordia),
                 padj_fruiting_vs_primordia <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
-set_mycelia_vs_fruiting <- annot_expr %>%
+set_mycelia_vs_fruiting <- final_df_with_DEGs %>%
   dplyr::filter(!is.na(padj_mycelia_vs_fruiting),
                 padj_mycelia_vs_fruiting <= alpha_thr) %>%
-  dplyr::pull(Gene) %>% unique()
+  dplyr::pull(Node) %>% unique()
 
 x <- list(
   "Primordia vs Mycelia"   = set_primordia_vs_mycelia,
@@ -406,47 +407,40 @@ x <- list(
 venn_plot <- ggVennDiagram(
   x[1:3], label_alpha = 0
 ) +
-  scale_fill_gradient(low = "white", high = "turquoise") +
+  scale_fill_gradient(low = "white", high = "grey60") +
   theme_void() +
   theme(
+    text = element_text(size = 12),         
+    legend.text  = element_text(size = 11),
+    legend.title = element_text(size = 12),
     plot.margin = unit(c(2, 2, 2, 2), "cm"),
     panel.background = element_rect(fill = "white", colour = NA),
     plot.background  = element_rect(fill = "white", colour = NA)
   ) +
-  coord_cartesian(clip = "off") +                                  
-  scale_x_continuous(expand = expansion(mult = 0.08)) +             
+  coord_cartesian(clip = "off") +
+  scale_x_continuous(expand = expansion(mult = 0.08)) +
   scale_y_continuous(expand = expansion(mult = 0.08))
 
-ggsave("venn_padj1e-10.png", venn_plot, width = 7, height = 6.5, dpi = 300)
+ggsave("venn_padj1e-9.png", venn_plot, width = 7, height = 6.5, dpi = 300)
 
-annot_df <- read.delim("annotbl_with_DEGs.txt", stringsAsFactors = FALSE)
-if (!"Gene" %in% colnames(annot_df) && !is.null(rownames(annot_df))) {
-  annot_df$Gene <- rownames(annot_df)
-}
+in_A <- final_df_with_DEGs$Node %in% x[["Primordia vs Mycelia"]]
+in_B <- final_df_with_DEGs$Node %in% x[["Fruiting body vs Primordia"]]
+in_C <- final_df_with_DEGs$Node %in% x[["Mycelia vs Fruiting body"]]
 
-in_A <- annot_df$Gene %in% x$primordia_vs_mycelia
-in_B <- annot_df$Gene %in% x$fruiting_body_vs_primordia
-in_C <- annot_df$Gene %in% x$mycelia_vs_fruiting_body
+final_df_with_DEGs$only_A          <-  in_A & !in_B & !in_C
+final_df_with_DEGs$only_B          <- !in_A &  in_B & !in_C
+final_df_with_DEGs$only_C          <- !in_A & !in_B &  in_C
+final_df_with_DEGs$A_and_B         <-  in_A &  in_B & !in_C
+final_df_with_DEGs$A_and_C         <-  in_A & !in_B &  in_C
+final_df_with_DEGs$B_and_C         <- !in_A &  in_B &  in_C
+final_df_with_DEGs$A_and_B_and_C   <-  in_A &  in_B &  in_C
 
-annot_df$only_A          <-  in_A & !in_B & !in_C
-annot_df$only_B          <- !in_A &  in_B & !in_C
-annot_df$only_C          <- !in_A & !in_B &  in_C
-annot_df$A_and_B         <-  in_A &  in_B & !in_C
-annot_df$A_and_C         <-  in_A & !in_B &  in_C
-annot_df$B_and_C         <- !in_A &  in_B &  in_C
-annot_df$A_and_B_and_C   <-  in_A &  in_B &  in_C
-
-annot_df$in_A <- in_A
-annot_df$in_B <- in_B
-annot_df$in_C <- in_C
-
-write.table(annot_df,
-            file = "annotbl_with_DEGs.txt",
-            sep = "\t", quote = FALSE, row.names = FALSE)
+write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## PCA plot
 ```
 vsd <- vst(dds_wt, blind = FALSE)
+vsd_5 <- vst(dds_wt_5, blind = FALSE)
 
 # Use this when utilizing the built-in functions of DESeq2
 png("DESeq2_PCA_plot.png", width = 1200, height = 1000, res = 150)
@@ -454,7 +448,7 @@ plotPCA(vsd, intgroup = "condition")
 dev.off()
 
 # The following is the customized version used in this analysis.
-vsd_mat <- assay(vsd)              
+vsd_mat <- assay(vsd_5)              
 vsd_df <- t(vsd_mat) %>% as.data.frame()
 vsd_df <- vsd_df %>% mutate(Sample = rownames(vsd_df))
 pca_input <- vsd_df %>% left_join(meta, by = c("Sample" = "Run"))
@@ -470,9 +464,9 @@ explained_var <- pca_result$sdev^2
 explained_var_percent <- explained_var / sum(explained_var) * 100
 
 large_group_colors <- c(
-  "mycelia" = "#0072B2",      # blue
-  "primordia" = "#E69F00",    # orange
-  "fruiting_body" = "#009E73" # green
+  "mycelia" = "#009E73",      # green
+  "primordia" = "#0072B2",    # blue
+  "fruiting_body" = "#D55E00" # orange
 )
 
 group_shapes <- c(
@@ -489,8 +483,8 @@ group_shapes <- c(
 pca_scores$Group <- factor(pca_scores$Group, levels = names(group_shapes))
 pca_scores$LargeGroup <- factor(pca_scores$LargeGroup, levels = names(large_group_colors))
 p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = LargeGroup, shape = Group)) +
-  geom_point(size = 3) +
-  theme_minimal() +
+  geom_point(size = 4.2, stroke = 0.8) +                     
+  theme_minimal(base_size = 12) +                             
   labs(
     x = sprintf("PC1 (%.2f%%)", explained_var_percent[1]),
     y = sprintf("PC2 (%.2f%%)", explained_var_percent[2])
@@ -498,33 +492,38 @@ p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = LargeGroup, shape = Group)
   scale_color_manual(values = large_group_colors) +
   scale_shape_manual(values = group_shapes) +
   theme(
-    legend.position = "right",
-    legend.title = element_text(size = 10),
-    legend.text = element_text(size = 8)
+    axis.title  = element_text(size = 14),
+    axis.text   = element_text(size = 12),
+    legend.title= element_text(size = 12),
+    legend.text = element_text(size = 11),
+    legend.key.size = unit(0.7, "cm")                        
   ) +
-  labs(color = "Large Group", shape = "Group")
+  guides(color = guide_legend(override.aes = list(size = 4.2)),
+         shape = guide_legend(override.aes = list(size = 4.2)))
 
-ggsave("pca_plot_large_group_shape.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 300, bg = "white")
+ggsave("PCA_plot.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 300, bg = "white")
 ```
 ## TopGO
 ```
-##topGO(onlyAについて、human,mouse,yeast,uniprot,interproscanをループ)
+##topGO
 library(topGO)
 library(tidyverse)
-df <- read.table("annotbl_with_DEGs.txt", sep = "\t", header = TRUE, stringsAsFactors = FALSE)
-go_columns <- c("human_GO", "mouse_GO", "yeast_GO", "uniprot_GO", "interproscan_GO")
+library(Rgraphviz)
+
+# each GO
+go_columns <- c("GO_human", "GO_mouse", "GO_yeast", "GO_uniprot", "GO_from_InterPro_IDs")
 for (go_col in go_columns) {
   message("Running topGO for: ", go_col)
-  df_bg <- df %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
+  df_bg <- final_df_with_DEGs %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
   gene2go <- df_bg %>%
-    dplyr::select(query_id, GO = all_of(go_col)) %>%
+    dplyr::select(Node, GO = all_of(go_col)) %>%
     dplyr::mutate(GO_list = strsplit(GO, ";")) %>%
     tidyr::unnest(GO_list)
-  gene2GO_map <- split(gene2go$GO_list, gene2go$query_id)
-  all_genes <- unique(df_bg$query_id)
-  sig_genes <- df %>%
-    filter(onlyA == TRUE & query_id %in% all_genes) %>%
-    pull(query_id)
+  gene2GO_map <- split(gene2go$GO_list, gene2go$Node)
+  all_genes <- unique(df_bg$Node)
+  sig_genes <- final_df_with_DEGs %>%
+    filter(only_A == TRUE & Node %in% all_genes) %>%
+    pull(Node)
   geneList <- factor(as.integer(all_genes %in% sig_genes))
   names(geneList) <- all_genes
   GOdata <- new("topGOdata",
@@ -536,8 +535,238 @@ for (go_col in go_columns) {
   resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
   allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 20)
   print(allRes)
-  output_file <- paste0("topGO_Fisher_result_", go_col, "_onlyA.tsv")
+  output_file <- paste0("topGO_Fisher_result_", go_col, "_only_A.tsv")
   write.table(allRes, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
 }
+
+# all GO
+gene2go_long <- final_df_with_DEGs %>%
+  pivot_longer(cols = all_of(go_columns), names_to = "source", values_to = "GO") %>%
+  filter(!is.na(GO), GO != "") %>%
+  mutate(GO_list = strsplit(GO, ";")) %>%
+  unnest(GO_list) %>%
+  mutate(GO_list = str_trim(GO_list)) %>%
+  filter(GO_list != "") %>%
+  distinct(Node, GO_list)
+
+all_genes <- unique(gene2go_long$Node)
+gene2GO_map <- split(gene2go_long$GO_list, gene2go_long$Node)
+gene2GO_map <- lapply(gene2GO_map, unique)
+
+sig_genes <- final_df_with_DEGs %>%
+  filter(only_B == TRUE, Node %in% all_genes) %>%
+  pull(Node) %>%
+  unique()
+
+geneList <- factor(as.integer(all_genes %in% sig_genes))
+names(geneList) <- all_genes
+
+GOdata <- new("topGOdata",
+              ontology = "BP",
+              allGenes = geneList,
+              annot = annFUN.gene2GO,
+              gene2GO = gene2GO_map)
+
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+# resultFisher <- runTest(GOdata, algorithm="elim",     statistic="fisher")
+# resultFisher <- runTest(GOdata, algorithm="weight01", statistic="fisher")
+
+allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200, numChar = 1000)
+
+print(head(allRes, 20))
+write.table(allRes, file = "topGO_weight01_result_mergedGO_onlyA.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+
+scores <- score(resultFisher) 
+png("topGO_graph_weight01Fisher.png", width = 1600, height = 1200, res = 1200)
+showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
+dev.off()
+
+# dot plot
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(dplyr)
+  library(stringr)
+})
+
+res_classic  <- runTest(GOdata, algorithm = "classic",  statistic = "fisher")
+res_elim     <- runTest(GOdata, algorithm = "elim",     statistic = "fisher")
+res_weight01 <- runTest(GOdata, algorithm = "weight01", statistic = "fisher")
+
+crRes <- GenTable(GOdata, classicFisher = res_classic, topNodes = 200, numChar = 1000)
+elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200, numChar = 1000)
+weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200, numChar = 1000)
+
+topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
+                          top_n = 20, label_wrap = 40,
+                          width = 8, height = 6, dpi = 300,
+                          outfile = NULL) {
+
+  tab <- GenTable(
+    GOdata,
+    Pvalue = result_obj,
+    topNodes = max(200, top_n) ,
+    numChar = 1000
+  )
+
+  df <- tab %>%
+    mutate(
+      Pvalue_num  = suppressWarnings(as.numeric(Pvalue)),
+      Annotated   = as.numeric(Annotated),
+      Significant = as.numeric(Significant),
+      GeneRatio   = Significant / pmax(Annotated, 1),      
+      Term_wrapped = str_wrap(Term, width = label_wrap)
+    ) %>%
+    filter(is.finite(Pvalue_num)) %>%
+    arrange(Pvalue_num) %>%       
+    slice_head(n = top_n) %>%
+    mutate(Term_wrapped = factor(Term_wrapped, levels = rev(Term_wrapped)))
+
+  if (nrow(df) == 0) {
+    message("[", method_label, "] No significant terms were found")
+    return(invisible(NULL))
+  }
+
+  p <- ggplot(df, aes(x = GeneRatio, y = Term_wrapped)) +
+    geom_point(aes(size = Significant, color = -log10(Pvalue_num))) +
+    scale_size_continuous(name = "Significant") +
+    scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
+    labs(
+      x = "GeneRatio (Significant / Annotated)",
+      y = NULL,
+      title = paste0("topGO dotplot (", method_label, ")")
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      axis.text.y = element_text(size = 7)
+    )
+
+  if (is.null(outfile)) {
+    outfile <- paste0("topGO_dotplot_", method_label, ".png")
+  }
+  ggsave(outfile, plot = p, width = width, height = height, dpi = dpi, bg = "white")
+  message("Saved: ", outfile)
+
+  invisible(list(table = df, plot = p, file = outfile))
+}
+
+topgo_dotplot(GOdata, res_classic,  method_label = "classic",  outfile = "topGO_dotplot_classic.png")
+topgo_dotplot(GOdata, res_elim,     method_label = "elim",     outfile = "topGO_dotplot_elim.png")
+topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_dotplot_weight01.png")
+
 ```
+## Blast2GO
+```
+diamond blastp -d ../../nr-2024 -q transcripts.fasta.transdecoder_dir/longest_orfs.pep -o shiitake_orf-blastp.xml -p 96 -f 5 -k 1 &<br>
+# blasted → 150,402, GO annotated → 17,594
+## topGO
+data <- read.delim("blast2go-topGO.txt", stringsAsFactors = FALSE)
+data$GO_IDs_clean <- gsub("(C:|P:|F:)", "", data$GO.IDs)
+data_long <- data %>%
+   separate_rows(GO_IDs_clean, sep = ";\\s*") %>%
+   filter(GO_IDs_clean != "")
+geneID2GO <- tapply(data_long$GO_IDs_clean, data_long$SeqName, unique)
+sigGenes <- data %>%
+  filter(onlyA != "#N/A") %>%
+  pull(SeqName)
+
+allGenes <- unique(data$SeqName) 
+
+geneList <- factor(as.integer(allGenes %in% sigGenes))
+names(geneList) <- allGenes 
+
+GOdata <- new("topGOdata",
+               ontology = "BP", 
+               allGenes = geneList,
+               annot = annFUN.gene2GO,
+               gene2GO = geneID2GO) 
+
+resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
+resultFisher <- runTest(GOdata, algorithm = "elim", statistic = "fisher")
+resultFisher <- runTest(GOdata, algorithm = "weight01", statistic = "fisher")
+
+allRes <- GenTable(GOdata, classicFisher = resultFisher, orderBy = "classicFisher", topNodes = 100, numChar = 1000)
+write.table(allRes, file = "topGO_blast2go_weight01.txt", sep = "\t", quote = FALSE, row.names = FALSE)
+
+scores <- score(resultFisher) 
+png("topGO_blast2go_weight01Fisher.png", width = 1600, height = 1200, res = 180)
+showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
+dev.off()
+
+# dot plot
+suppressPackageStartupMessages({
+  library(ggplot2)
+  library(dplyr)
+  library(stringr)
+})
+
+res_classic  <- runTest(GOdata, algorithm = "classic",  statistic = "fisher")
+res_elim     <- runTest(GOdata, algorithm = "elim",     statistic = "fisher")
+res_weight01 <- runTest(GOdata, algorithm = "weight01", statistic = "fisher")
+
+crRes <- GenTable(GOdata, classicFisher = res_classic, topNodes = 200)
+elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200)
+weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200)
+
+write.table(crRes, file = "topGO_elim_result_mergedGO_onlyA.tsv",
+            sep = "\t", quote = FALSE, row.names = FALSE)
+
+topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
+                          top_n = 20, label_wrap = 40,
+                          width = 8, height = 6, dpi = 300,
+                          outfile = NULL) {
+
+  tab <- GenTable(
+    GOdata,
+    Pvalue = result_obj,
+    topNodes = max(200, top_n) , numChar = 1000
+  )
+
+  df <- tab %>%
+    mutate(
+      Pvalue_num  = suppressWarnings(as.numeric(Pvalue)),
+      Annotated   = as.numeric(Annotated),
+      Significant = as.numeric(Significant),
+      GeneRatio   = Significant / pmax(Annotated, 1),      
+      Term_wrapped = str_wrap(Term, width = label_wrap)
+    ) %>%
+    filter(is.finite(Pvalue_num)) %>%
+    arrange(Pvalue_num) %>%       
+    slice_head(n = top_n) %>%
+    mutate(Term_wrapped = factor(Term_wrapped, levels = rev(Term_wrapped)))
+
+  if (nrow(df) == 0) {
+    message("[", method_label, "] No significant terms were found")
+    return(invisible(NULL))
+  }
+
+  p <- ggplot(df, aes(x = GeneRatio, y = Term_wrapped)) +
+    geom_point(aes(size = Significant, color = -log10(Pvalue_num))) +
+    scale_size_continuous(name = "Significant") +
+    scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
+    labs(
+      x = "GeneRatio (Significant / Annotated)",
+      y = NULL,
+      title = paste0("topGO dotplot (", method_label, ")")
+    ) +
+    theme_minimal(base_size = 12) +
+    theme(
+      axis.text.y = element_text(size = 9),
+      plot.title  = element_text(hjust = 0)
+    )
+
+  if (is.null(outfile)) {
+    outfile <- paste0("topGO_dotplot_", method_label, ".png")
+  }
+  ggsave(outfile, plot = p, width = width, height = height, dpi = dpi, bg = "white")
+  message("Saved: ", outfile)
+
+  invisible(list(table = df, plot = p, file = outfile))
+}
+
+topgo_dotplot(GOdata, res_classic,  method_label = "classic",  outfile = "topGO_dotplot_classic.png")
+topgo_dotplot(GOdata, res_elim,     method_label = "elim",     outfile = "topGO_dotplot_elim.png")
+topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_dotplot_weight01.png")
+```
+
 
