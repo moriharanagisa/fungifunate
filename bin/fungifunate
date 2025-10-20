@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+set -euo pipefail
+
+usage() {
+  echo "fungifunate --reads <fastq_dir> --annot-dir <annot_dir> --meta <meta.csv> --out <outdir> [--threads N]"
+}
+
+READS=""
+ANNOT=""
+META=""
+OUT=""
+THREADS=8
+
+while [[ $# -gt 0 ]]; do
+  case $1 in
+    --reads) READS="$2"; shift 2;;
+    --annot-dir) ANNOT="$2"; shift 2;;
+    --meta) META="$2"; shift 2;;
+    --out) OUT="$2"; shift 2;;
+    --threads) THREADS="$2"; shift 2;;
+    -h|--help) usage; exit 0;;
+    *) echo "Unknown arg: $1"; usage; exit 1;;
+  esac
+done
+
+[[ -z "$READS" || -z "$ANNOT" || -z "$META" || -z "$OUT" ]] && { usage; exit 1; }
+
+mkdir -p "$OUT"
+
+snakemake -s "$(dirname "$0")/../Snakefile" \
+  --cores "$THREADS" \
+  --config reads="$READS" annot="$ANNOT" meta="$META" outdir="$OUT"
