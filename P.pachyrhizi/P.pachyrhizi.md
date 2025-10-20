@@ -33,19 +33,15 @@ busco -i P.pachyrhizi-IsoSeq-remdup.fasta -o busco-results -l eukaryota_odb10 -m
 ```bash
 # Download 57 RNA-seq samples of Lentinula edodes (H600) from SRA
 prefetch --option-file SRR.txt
-
-# Convert .sra files to .fastq (SRR21185407 to SRR21185463)
-for i in $(seq 21185407 21185463); do
+for i in $(seq 10130097 10130116); do
   fasterq-dump "SRR${i}"
 done
 
-# Merge all forward and reverse reads into single files
-cat *_1.fastq > cat-L.edodes_1.fastq
-cat *_2.fastq > cat-L.edodes_2.fastq
-
 # Trimming reads
 docker attach trimgalore-0.6.10
-trim_galore --paired cat-L.edodes_1.fastq cat-L.edodes_2.fastq
+for i in $(seq 10130097 10130116); do
+  trim_galore --paired "SRR${i}_1.fastq" "SRR${i}_2.fastq"
+done
 ```
 ## ORF Prediction with TransDecoder
 
@@ -260,181 +256,80 @@ df <- df %>%
 ## Quantification
 ```bash
 # salmon (Since amino acid sequences are not accepted by Salmon, CDS were used.)
-salmon index -p 64 --keepDuplicates -t transcripts.fasta.transdecoder_dir/longest_orfs.cds -i SPAdes_index
+salmon index -p 64 --keepDuplicates -t P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.cds -i salmon_index
 
-for i in $(seq 21185407 21185463); do
-    salmon quant -i SPAdes_index -l A \
-                 -1 "SRR${i}"_1.fastq \
-                 -2 "SRR${i}"_2.fastq \
+for i in $(seq 10130097 10130116); do
+    salmon quant -i salmon_index -l A \
+                 -1 "SRR${i}"_val_1.fastq \
+                 -2 "SRR${i}"_val_2.fastq \
                  -p 64 \
                  -o salmon-"SRR${i}"
 done
 ```
-## Condition Specific annotation
+## Add TPM
 ```R
-library(tximport)
 library(dplyr)
 library(tidyr)
 library(readr)
-library(tximport)
+library(purrr)
 
-s2c <- read.table("sample2condition.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
-s2c$group <- gsub(" ", "_", s2c$group)
-files <- s2c$path
-names(files) <- s2c$sample
-txi <- tximport(files, type = "salmon", txOut = TRUE)
-txi$length[txi$length == 0] <- 1
-tpm <- as.data.frame(txi$abundance)
-tpm <- tibble::rownames_to_column(tpm, var = "Gene")
-meta <- read_csv("meta_data.csv") 
-tpm_long <- pivot_longer(tpm, -Gene, names_to = "Run", values_to = "TPM")
-tpm_annotated <- left_join(tpm_long, meta, by = "Run")
+sample_numbers <- 10130097:10130116
+sample_names <- sprintf("SRR%d", sample_numbers)
+file_paths <- sprintf("salmon-%s.sf", sample_names)
+samples <- data.frame(
+  sample = sample_names,
+  path = file_paths
+)
 
-selected_genes <- tpm_annotated %>%
-  group_by(Gene, LargeGroup) %>%
-  summarise(
-    meanTPM = mean(TPM, na.rm = TRUE),
-    sdTPM   = sd(TPM, na.rm = TRUE),
-    CV      = ifelse(meanTPM > 0, sdTPM / meanTPM, NA),
-    .groups = "drop"
-  ) %>%
-  group_by(Gene) %>%
-  summarise(
-    high_expr_groups = sum(meanTPM >= 1),
-    expressed_group = paste(LargeGroup[meanTPM >= 1], collapse = ";"),
-    all_CV_below_threshold = all(CV < 1, na.rm = TRUE),
-    meanTPM = max(meanTPM, na.rm = TRUE),
-    .groups = "drop"
-  ) %>%
-  filter(
-    high_expr_groups == 1,
-    all_CV_below_threshold == TRUE,
-    meanTPM >= 2
-  ) %>%
-  dplyr::select(Gene, expressed_group, meanTPM)
+sample_data_list <- samples %>%
+  mutate(data = map2(path, sample, ~ read.csv(.x, sep = "\t") %>%
+                      select(Name, TPM) %>%
+                      setNames(c("Name", .y)))) %>%
+  pull(data)
 
-final_df <- left_join(df, selected_genes, by = c("Node" = "Gene"))
+combined_data <- reduce(sample_data_list, full_join, by = "Name")
+tpm_wide <- combined_data %>% 
+  dplyr::rename_with(~ paste0("TPM_", .x), -Name)
 
-tpm_wide <- tpm %>% 
-  dplyr::rename_with(~ paste0("TPM_", .x), -Gene)
-
-final_df_with_TPM <- left_join(final_df, tpm_wide, by = c("Node" = "Gene"))
-# write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-CS-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
+final_df_with_TPM <- left_join(df, tpm_wide, by = c("Node" = "Name"))
+# write.table(final_df_with_TPM, file = "ggsearch-interpro-GO-TPM_annotbl.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
 ```
 ## DEGs
 ```R
-library(DESeq2)
-library(tidyverse)
-library(ggplot2)
-
-sampleTable <- data.frame(condition=s2c$group)
-rownames(sampleTable) <- colnames(txi$counts)
-dds <- DESeqDataSetFromTximport(txi, sampleTable, ~condition)
-# dds_5 <- dds[rowSums(counts(dds) >= 5) >= 5, ] # Optional:Low-expression genes will also be filtered in the next step
-dds_wt <- DESeq(dds)
-# dds_wt_5 <- DESeq(dds_5) # for PCA
-
-comparisons <- list(
-  list(c("condition", "primordia", "mycelia"), "deseq2-primordia-vs-mycelia.txt"),
-  list(c("condition", "fruiting_body", "primordia"), "deseq2-fruiting_body-vs-primordia.txt"),
-  list(c("condition", "mycelia", "fruiting_body"), "deseq2-mycelia-vs-fruiting_body.txt")
-)
-
-for (comp in comparisons) {
-  contrast <- comp[[1]]         
-  outfile <- comp[[2]]         
-  res <- results(dds_wt, contrast = contrast)
-  res_naomit <- na.omit(res)
-  res_sorted <- res_naomit[order(res_naomit$padj), ]
-  write.table(res_sorted, outfile, sep = "\t", quote = FALSE)
+#https://www.bioconductor.org/packages/release/bioc/vignettes/maSigPro/inst/doc/maSigProUsersGuide.pdf
+BiocManager::install("maSigPro")
+library(maSigPro)
+count <- read.csv("combined_TPM_data_filtered.csv", header=TRUE, row.names=1)
+edesign <- read.table("edesign.txt", header=TRUE, row.names=1, sep="\t", stringsAsFactors=FALSE)
+colnames(count)
+rownames(edesign)
+colnames(edesign)
+rownames(count)
+design <- make.design.matrix(edesign, degree = 3)
+design$groups.vector
+fit <- p.vector(count, design, Q = 0.05, MT.adjust = "BH", min.obs = 10)
+fit$i # returns the number of significant genes
+fit$alfa # gives p-value at the Q false discovery control level
+fit$SELEC # is a matrix with the significant genes and their expression values
+tstep <- T.fit(fit, step.method = "backward", alfa = 0.05)
+sigs <- get.siggenes(tstep, rsq = 0.6, vars = "all")
+names(sigs)
+names(sigs$sig.genes)
+sigs$sig.genes$g # 3078
+see.genes(sigs$sig.genes, show.fit = T, dis =design$dis,
+ cluster.method="hclust" ,cluster.data = 1, k = 4) 
+clusters <- see.genes(sigs$sig.genes, show.fit = TRUE, dis = design$dis,
+                      cluster.method = "hclust", cluster.data = 1, k = 4)
+clustered_genes <- clusters$cut
+pvalues_df <- sigs$sig.genes$sig.pvalues
+for (i in unique(clustered_genes)) {
+  genes_in_cluster <- names(clustered_genes[clustered_genes == i])  
+  cluster_pvalues <- pvalues_df[rownames(pvalues_df) %in% genes_in_cluster, ]  
+  
+  write.csv(cluster_pvalues, file = paste0("Cluster_", i, "_genes_with_pvalues.csv"), row.names = TRUE, quote = FALSE)
 }
 
-#deseq2-primordia_body-vs-mycelia-e-9 1,926 transcripts
-#deseq2-fruiting_body-vs-primordia-e-9 1,739 transcripts
-#deseq2-mycelia-vs-fruiting_body-e-9 3,801 transcripts
-
-de_files <- list(
-  primordia_vs_mycelia  = "deseq2-primordia-vs-mycelia.txt",
-  fruiting_vs_primordia = "deseq2-fruiting_body-vs-primordia.txt",
-  mycelia_vs_fruiting   = "deseq2-mycelia-vs-fruiting_body.txt"
-)
-
-for (name in names(de_files)) {
-  res <- read.table(de_files[[name]], sep = "\t", header = TRUE,
-                    stringsAsFactors = FALSE, check.names = FALSE)
-  if (!"Gene" %in% colnames(res)) {
-    res$Gene <- rownames(res)
-  }
-  df_sub <- res[, c("Gene", "log2FoldChange", "padj")]
-  colnames(df_sub) <- c("Gene",
-                        paste0("log2FC_", name),
-                        paste0("padj_",   name))
-  df_sub <- dplyr::distinct(df_sub, Gene, .keep_all = TRUE) 
-
-  final_df_with_DEGs <- dplyr::left_join(final_df_with_DEGs, df_sub, by = c("Node" = "Gene"))
-}
-
-write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
-```
-## Benn Diagram
-```
-library(ggVennDiagram)
-library(grid)      
-
-alpha_thr <- 1e-9
-set_primordia_vs_mycelia <- final_df_with_DEGs %>%
-  dplyr::filter(!is.na(padj_primordia_vs_mycelia),
-                padj_primordia_vs_mycelia <= alpha_thr) %>%
-  dplyr::pull(Node) %>% unique()
-
-set_fruiting_vs_primordia <- final_df_with_DEGs %>%
-  dplyr::filter(!is.na(padj_fruiting_vs_primordia),
-                padj_fruiting_vs_primordia <= alpha_thr) %>%
-  dplyr::pull(Node) %>% unique()
-
-set_mycelia_vs_fruiting <- final_df_with_DEGs %>%
-  dplyr::filter(!is.na(padj_mycelia_vs_fruiting),
-                padj_mycelia_vs_fruiting <= alpha_thr) %>%
-  dplyr::pull(Node) %>% unique()
-
-x <- list(
-  "Primordia vs Mycelia"   = set_primordia_vs_mycelia,
-  "Fruiting body vs Primordia"  = set_fruiting_vs_primordia,
-  "Mycelia vs Fruiting body"    = set_mycelia_vs_fruiting
-)
-
-venn_plot <- ggVennDiagram(
-  x[1:3], label_alpha = 0
-) +
-  scale_fill_gradient(low = "white", high = "grey60") +
-  theme_void() +
-  theme(
-    text = element_text(size = 12),         
-    legend.text  = element_text(size = 11),
-    legend.title = element_text(size = 12),
-    plot.margin = unit(c(2, 2, 2, 2), "cm"),
-    panel.background = element_rect(fill = "white", colour = NA),
-    plot.background  = element_rect(fill = "white", colour = NA)
-  ) +
-  coord_cartesian(clip = "off") +
-  scale_x_continuous(expand = expansion(mult = 0.08)) +
-  scale_y_continuous(expand = expansion(mult = 0.08))
-
-ggsave("venn_padj1e-9.png", venn_plot, width = 7, height = 6.5, dpi = 300)
-
-in_A <- final_df_with_DEGs$Node %in% x[["Primordia vs Mycelia"]]
-in_B <- final_df_with_DEGs$Node %in% x[["Fruiting body vs Primordia"]]
-in_C <- final_df_with_DEGs$Node %in% x[["Mycelia vs Fruiting body"]]
-
-final_df_with_DEGs$only_A          <-  in_A & !in_B & !in_C
-final_df_with_DEGs$only_B          <- !in_A &  in_B & !in_C
-final_df_with_DEGs$only_C          <- !in_A & !in_B &  in_C
-final_df_with_DEGs$A_and_B         <-  in_A &  in_B & !in_C
-final_df_with_DEGs$A_and_C         <-  in_A & !in_B &  in_C
-final_df_with_DEGs$B_and_C         <- !in_A &  in_B &  in_C
-final_df_with_DEGs$A_and_B_and_C   <-  in_A &  in_B &  in_C
-
-write.table(final_df_with_DEGs, file = "annotbl_with_DEGs.txt", na = "", sep = "\t", quote = FALSE, row.names = FALSE)
+print(table(clustered_genes))
 ```
 ## PCA plot
 ```
