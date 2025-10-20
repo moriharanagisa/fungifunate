@@ -64,9 +64,6 @@ grep -c "^>" transcripts.fasta.transdecoder_dir/longest_orfs.pep
 # ggsearch
 time ggsearch36 -Q -T 8 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep mac/Homo_sapiens.GRCh38.pep.all.fa > ggsearch-P.pachyrhizi-human.txt; ggsearch36 -Q -T 8 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep mac/Mus_musculus.GRCm39.pep.all.fa > ggsearch-P.pachyrhizi-mouse.txt; ggsearch36 -Q -T 8 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep mac/Saccharomyces_cerevisiae.R64-1-1.pep.all.fa > ggsearch-P.pachyrhizi-S.cerevisiae.txt; ggsearch36 -Q -T 8 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep mac/uniprot_sprot.fasta > ggsearch-P.pachyrhizi-uniprot.txt; ggsearch36 -Q -T 128 -d 1 -m10 -E 0.1 P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep fungidb-68.fasta > ggsearch-P.pachyrhizi-fungidb.txt &
 
-# parse
-cat ggsearch-P.pachyrhizi-human.txt | perl 15parseggsearch.pl > ggsearch-P.pachyrhizi-human-parsing.txt; cat ggsearch-P.pachyrhizi-mouse.txt | perl 15parseggsearch.pl > ggsearch-P.pachyrhizi-mouse-parsing.txt; cat ggsearch-P.pachyrhizi-S.cerevisiae.txt | perl 15parseggsearch.pl > ggsearch-P.pachyrhizi-S.cerevisiae-parsing.txt; cat ggsearch-P.pachyrhizi-uniprot.txt | perl 15parseggsearch.pl > ggsearch-P.pachyrhizi-uniprot-parsing.txt; cat ggsearch-P.pachyrhizi-fungidb.txt | perl 15parseggsearch.pl > ggsearch-P.pachyrhizi-fungidb-parsing.txt
-
 # InterProScan
 # Remove asterisks (*) at the end of amino acid sequences from the FASTA file
 sed 's/\*//g' transcripts.fasta.transdecoder_dir/longest_orfs.pep > longest_orfs_cleaned.pep
@@ -80,10 +77,12 @@ python3 setup.py -f interproscan.properties
 ## annotation table
 ```
 # parse
-perl -nle 'print $1 if(/^>(\S+)/)' transcripts.fasta.transdecoder_dir/longest_orfs.pep > longest_orf-pid.txt
+perl -nle 'print $1 if(/^>(\S+)/)' P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/longest_orfs.pep > longest_orf-pid.txt
 for file in ggsearch-*.txt; do cat "$file" | perl 15parseggsearch.pl > "${file%.txt}-parsing.txt"; done
+
 # make annotation table
-cat longest_orf-pid.txt | perl 15mkannotbl-for-fungi.pl ggsearch-shiitake-human-parsing.txt | perl 15mkannotbl.pl ggsearch-shiitake-mouse-parsing.txt | perl 15mkannotbl.pl ggsearch-shiitake-S.cerevisiae-parsing.txt | perl 15mkannotbl.pl ggsearch-shiitake-uniprot-parsing.txt | perl 15mkannotbl.pl ggsearch-shiitake-fungidb-parsing.txt > ggsearch_annotbl.txt
+cat longest_orf-pid.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-human-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-mouse-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-S.cerevisiae-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-uniprot-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-fungidb-parsing.txt > ggsearch_P.pachyrhizi_annotbl.txt
+
 
 # add InterProScan
 R
