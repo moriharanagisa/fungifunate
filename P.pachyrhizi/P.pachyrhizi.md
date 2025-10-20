@@ -71,7 +71,6 @@ sed 's/\*//g' ../P.pachyrhizi/P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder_dir/
 wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz
 tar -pxvzf interproscan-5.67-99.0-*-bit.tar.gz
 python3 setup.py -f interproscan.properties
-./interproscan.sh -i ./longest_orfs_cleaned.pep -f tsv
 ./interproscan.sh -i longest_orfs_cleaned.pep -f tsv --goterms
 ```
 ## annotation table
@@ -81,7 +80,7 @@ perl -nle 'print $1 if(/^>(\S+)/)' P.pachyrhizi-IsoSeq-remdup.fasta.transdecoder
 for file in ggsearch-*.txt; do cat "$file" | perl 15parseggsearch.pl > "${file%.txt}-parsing.txt"; done
 
 # make annotation table
-cat longest_orf-pid.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-human-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-mouse-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-S.cerevisiae-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-uniprot-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-fungidb-parsing.txt > ggsearch_P.pachyrhizi_annotbl.txt
+cat longest_orf-pid.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-human-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-mouse-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-S.cerevisiae-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-uniprot-parsing.txt | perl 15mkannotbl.pl ggsearch-P.pachyrhizi-fungidb-parsing.txt > ggsearch_annotbl.txt
 
 # add InterProScan
 R
