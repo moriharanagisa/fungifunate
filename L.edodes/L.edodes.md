@@ -91,8 +91,7 @@ sed 's/\*//g' transcripts.fasta.transdecoder_dir/longest_orfs.pep > longest_orfs
 wget https://ftp.ebi.ac.uk/pub/software/unix/iprscan/5/5.67-99.0/interproscan-5.67-99.0-64-bit.tar.gz
 tar -pxvzf interproscan-5.67-99.0-*-bit.tar.gz
 python3 setup.py -f interproscan.properties
-./interproscan.sh -i ../output/longest_orfs_cleaned.pep -f tsv #130,603
-./interproscan.sh -i longest_orfs_cleaned.pep -f tsv --goterms
+./interproscan.sh -i longest_orfs_cleaned.pep -f tsv --goterms #130,603
 ```
 ## annotation table
 ```
