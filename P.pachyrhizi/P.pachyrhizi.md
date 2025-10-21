@@ -268,6 +268,37 @@ done
 ```
 ## Add TPM
 ```R
+library(dplyr)
+library(purrr)
+library(tidyr)
+sample_numbers <- 10130097:10130116
+sample_names <- sprintf("SRR%d", sample_numbers)
+file_paths <- sprintf("salmon-%s.sf", sample_names)
+samples <- data.frame(
+  sample = sample_names,
+  path = file_paths
+)
+
+sample_data_list <- samples %>%
+  mutate(
+    data = map2(
+      path, sample,
+      ~ read.csv(.x, sep = "\t", check.names = FALSE) %>%
+          dplyr::select(Name, TPM) %>%         # ← ここを明示
+          setNames(c("Name", .y))
+    )
+  ) %>%
+  pull(data)
+
+combined_data <- reduce(sample_data_list, full_join, by = "Name")
+
+tpm <- combined_data %>%
+  rename_with(~ paste0("TPM_", .x), -Name) %>%
+  distinct(Name, .keep_all = TRUE)
+
+df <- df %>% left_join(tpm, by = c("Node" = "Name"))
+
+# 以降削除
 library(tximport)
 library(dplyr)
 library(tidyr)
@@ -325,8 +356,40 @@ print(table(clustered_genes))
 ```
 ## PCA plot
 ```
-vsd <- vst(dds_wt, blind = FALSE)
-vsd_5 <- vst(dds_wt_5, blind = FALSE)
+library(tidyverse)
+library(ggplot2)
+library(readr)
+
+combined_data_filtered <- combined_data %>%
+  filter(if_any(-Name, ~ .x >= 1.0))
+meta_data <- read_csv("meta_data.csv")
+tpm_subset <- dplyr::select(combined_data_filtered, dplyr::all_of(meta_data$Run))
+tpm_log <- log2(as.matrix(tpm_subset) + 1)
+pca_result <- prcomp(t(tpm_log), center = TRUE, scale. = TRUE)
+
+pca_scores <- as.data.frame(pca_result$x) %>%
+  mutate(Sample = rownames(.)) %>%
+  left_join(meta_data, by = c("Sample" = "Run"))
+
+explained_var <- pca_result$sdev^2
+explained_var_percent <- explained_var / sum(explained_var) * 100
+
+colors <- c("3-dai" = "#EC407A", "7-dai" = "#FF7043", "10-dai" = "#26C6DA", "14-dai" = "#66BB6A")
+pca_scores$Group <- factor(pca_scores$Group, levels = c("3-dai", "7-dai", "10-dai", "14-dai"))
+
+p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = Group)) +
+  geom_point(size = 3.8) +                                  
+  theme_minimal() +
+  labs(
+    title = NULL,                                            
+    x = sprintf("PC1 (%.2f%%)", explained_var_percent[1]),  
+    y = sprintf("PC2 (%.2f%%)", explained_var_percent[2]),
+    color = "Group"
+  ) +
+  scale_color_manual(values = colors) +
+  theme(legend.position = "right")
+
+ggsave("pca_plot.pdf", plot = p, width = 11, height = 8.5, units = "in")
 
 # Use this when utilizing the built-in functions of DESeq2
 png("DESeq2_PCA_plot.png", width = 1200, height = 1000, res = 150)
