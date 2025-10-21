@@ -251,8 +251,7 @@ df <- df %>%
     GO_from_InterPro_IDs = tidyr::replace_na(GO_from_InterPro_IDs, "")
   ) %>%
   dplyr::select(-.rowid)
-# write_tsv(df, "ggsearch-interpro-GO_annotbl.txt", na = "")
-write.table(res_wt_naomit_sort, "deseq2-primordia-vs-mycelia.txt", sep="\t", na = "")
+# write.table(df, "annotbl.txt", sep="\t", row.names = FALSE, na = "")
 ```
 ## Quantification
 ```bash
@@ -285,7 +284,7 @@ sample_data_list <- samples %>%
     data = map2(
       path, sample,
       ~ read.csv(.x, sep = "\t", check.names = FALSE) %>%
-          dplyr::select(Name, TPM) %>%         # ← ここを明示
+          dplyr::select(Name, TPM) %>%         
           setNames(c("Name", .y))
     )
   ) %>%
@@ -355,7 +354,7 @@ add_df <- cluster_df %>%
   full_join(pval_df, by = "Node") %>%
   mutate(maSigPro_Significant = !is.na(maSigPro_Cluster))
 
-df <- df %>% left_join(add_df, by = "Node")
+final_df_with_DEGs <- df %>% left_join(add_df, by = "Node")
 write.table(df, "annotbl-with-DEGs.txt", sep="\t", row.names = FALSE, na = "")
 ```
 ## PCA plot
@@ -402,35 +401,6 @@ library(topGO)
 library(tidyverse)
 library(Rgraphviz)
 
-# each GO
-go_columns <- c("GO_human", "GO_mouse", "GO_yeast", "GO_uniprot", "GO_from_InterPro_IDs")
-for (go_col in go_columns) {
-  message("Running topGO for: ", go_col)
-  df_bg <- final_df_with_DEGs %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
-  gene2go <- df_bg %>%
-    dplyr::select(Node, GO = all_of(go_col)) %>%
-    dplyr::mutate(GO_list = strsplit(GO, ";")) %>%
-    tidyr::unnest(GO_list)
-  gene2GO_map <- split(gene2go$GO_list, gene2go$Node)
-  all_genes <- unique(df_bg$Node)
-  sig_genes <- final_df_with_DEGs %>%
-    filter(only_A == TRUE & Node %in% all_genes) %>%
-    pull(Node)
-  geneList <- factor(as.integer(all_genes %in% sig_genes))
-  names(geneList) <- all_genes
-  GOdata <- new("topGOdata",
-                ontology = "BP",
-                allGenes = geneList,
-                annot = annFUN.gene2GO,
-                gene2GO = gene2GO_map,
-                nodeSize = 5) # run it without this option as well
-  resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-  allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 20)
-  print(allRes)
-  output_file <- paste0("topGO_Fisher_result_", go_col, "_only_A.tsv")
-  write.table(allRes, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
-}
-
 # all GO
 gene2go_long <- final_df_with_DEGs %>%
   pivot_longer(cols = all_of(go_columns), names_to = "source", values_to = "GO") %>%
@@ -446,8 +416,8 @@ gene2GO_map <- split(gene2go_long$GO_list, gene2go_long$Node)
 gene2GO_map <- lapply(gene2GO_map, unique)
 
 sig_genes <- final_df_with_DEGs %>%
-  filter(only_B == TRUE, Node %in% all_genes) %>%
-  pull(Node) %>%
+  dplyr::filter(maSigPro_Cluster == "Cluster4", Node %in% all_genes) %>%
+  dplyr::pull(Node) %>%
   unique()
 
 geneList <- factor(as.integer(all_genes %in% sig_genes))
@@ -459,20 +429,30 @@ GOdata <- new("topGOdata",
               annot = annFUN.gene2GO,
               gene2GO = gene2GO_map)
 
-resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-# resultFisher <- runTest(GOdata, algorithm="elim",     statistic="fisher")
-# resultFisher <- runTest(GOdata, algorithm="weight01", statistic="fisher")
+algos <- c("classic", "elim", "weight01")
+results <- list()
+for (algo in algos) {
+  message(sprintf("-- %s Algorithm --", algo))
+  res <- runTest(GOdata, algorithm = algo, statistic = "fisher")
+  results[[algo]] <- res  
+  res_named <- setNames(list(res), paste0(algo, "Fisher"))
+  args <- c(
+    list(GOdata),                          
+    res_named,
+    list(orderBy = paste0(algo, "Fisher"),
+         topNodes = 200, numChar = 1000)
+  )
+  allRes <- do.call(topGO::GenTable, args)
+  write.table(allRes,
+              file = sprintf("topGO_%s_result.tsv", algo),
+              sep = "\t", quote = FALSE, row.names = FALSE)
+  scores <- score(res)
+  png(sprintf("topGO_graph_%sFisher.png", algo), width = 1600, height = 1200, res = 300)
+  showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
+  dev.off()
+}
+lapply(results, function(x) head(score(x)))
 
-allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200, numChar = 1000)
-
-print(head(allRes, 20))
-write.table(allRes, file = "topGO_weight01_result_mergedGO_onlyA.tsv",
-            sep = "\t", quote = FALSE, row.names = FALSE)
-
-scores <- score(resultFisher) 
-png("topGO_graph_weight01Fisher.png", width = 1600, height = 1200, res = 1200)
-showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
-dev.off()
 
 # dot plot
 suppressPackageStartupMessages({
@@ -559,7 +539,7 @@ data_long <- data %>%
    filter(GO_IDs_clean != "")
 geneID2GO <- tapply(data_long$GO_IDs_clean, data_long$SeqName, unique)
 sigGenes <- data %>%
-  filter(onlyA != "#N/A") %>%
+  filter(Cluster_4 != "#N/A") %>%
   pull(SeqName)
 
 allGenes <- unique(data$SeqName) 
@@ -600,7 +580,7 @@ crRes <- GenTable(GOdata, classicFisher = res_classic, topNodes = 200)
 elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200)
 weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200)
 
-write.table(crRes, file = "topGO_elim_result_mergedGO_onlyA.tsv",
+write.table(crRes, file = "topGO_elim_result_mergedGO_cluster4.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
 
 topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
