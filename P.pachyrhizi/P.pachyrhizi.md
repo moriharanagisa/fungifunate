@@ -252,6 +252,7 @@ df <- df %>%
   ) %>%
   dplyr::select(-.rowid)
 # write_tsv(df, "ggsearch-interpro-GO_annotbl.txt", na = "")
+write.table(res_wt_naomit_sort, "deseq2-primordia-vs-mycelia.txt", sep="\t", na = "")
 ```
 ## Quantification
 ```bash
@@ -297,32 +298,16 @@ tpm <- combined_data %>%
   distinct(Name, .keep_all = TRUE)
 
 df <- df %>% left_join(tpm, by = c("Node" = "Name"))
-
-# 以降削除
-library(tximport)
-library(dplyr)
-library(tidyr)
-library(readr)
-library(tibble)
-
-s2c <- read.table("sample2condition.txt", header = TRUE, sep = "\t", stringsAsFactors = FALSE)
-s2c$group <- gsub(" ", "_", s2c$group)
-files <- s2c$path
-names(files) <- s2c$sample
-txi <- tximport(files, type = "salmon", txOut = TRUE)
-txi$length[txi$length == 0] <- 1
-tpm <- as.data.frame(txi$abundance) %>%
-  rownames_to_column(var = "Name")
-colnames(tpm)[colnames(tpm) != "Name"] <- paste0("TPM_", colnames(tpm)[colnames(tpm) != "Name"])
-tpm <- tpm %>% distinct(Name, .keep_all = TRUE)
-df <- df %>% left_join(tpm, by = c("Node" = "Name"))
+# write.table(df, "annotbl.txt", sep="\t", na = "")
 ```
 ## DEGs
 ```R
 #https://www.bioconductor.org/packages/release/bioc/vignettes/maSigPro/inst/doc/maSigProUsersGuide.pdf
 BiocManager::install("maSigPro")
 library(maSigPro)
-count <- read.csv("combined_TPM_data_filtered.csv", header=TRUE, row.names=1)
+count <- df %>% dplyr::select(Node, dplyr::matches("^TPM_")) %>% 
+  dplyr::rename_with(~ sub("^TPM_", "", .x)) %>%
+  column_to_rownames("Node")
 edesign <- read.table("edesign.txt", header=TRUE, row.names=1, sep="\t", stringsAsFactors=FALSE)
 colnames(count)
 rownames(edesign)
@@ -353,6 +338,25 @@ for (i in unique(clustered_genes)) {
 }
 
 print(table(clustered_genes))
+
+cluster_df <- data.frame(
+  Node = names(clustered_genes),
+  maSigPro_Cluster = paste0("Cluster", as.integer(clustered_genes)),
+  stringsAsFactors = FALSE
+)
+
+pval_df <- pvalues_df %>%
+  as.data.frame() %>%
+  rownames_to_column(var = "Node")
+
+colnames(pval_df)[colnames(pval_df) != "Node"] <- paste0("maSigPro_p_", make.names(colnames(pval_df)[colnames(pval_df) != "Node"]))
+
+add_df <- cluster_df %>%
+  full_join(pval_df, by = "Node") %>%
+  mutate(maSigPro_Significant = !is.na(maSigPro_Cluster))
+
+df <- df %>% left_join(add_df, by = "Node")
+write.table(df, "annotbl-with-DEGs.txt", sep="\t", row.names = FALSE, na = "")
 ```
 ## PCA plot
 ```
@@ -388,67 +392,6 @@ p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = Group)) +
   ) +
   scale_color_manual(values = colors) +
   theme(legend.position = "right")
-
-ggsave("pca_plot.pdf", plot = p, width = 11, height = 8.5, units = "in")
-
-# Use this when utilizing the built-in functions of DESeq2
-png("DESeq2_PCA_plot.png", width = 1200, height = 1000, res = 150)
-plotPCA(vsd, intgroup = "condition")
-dev.off()
-
-# The following is the customized version used in this analysis.
-vsd_mat <- assay(vsd_5)              
-vsd_df <- t(vsd_mat) %>% as.data.frame()
-vsd_df <- vsd_df %>% mutate(Sample = rownames(vsd_df))
-pca_input <- vsd_df %>% left_join(meta, by = c("Sample" = "Run"))
-pca_result <- prcomp(
-  pca_input %>% dplyr::select(-Sample, -Group, -LargeGroup),
-  center = TRUE, scale. = TRUE
-)
-pca_scores <- as.data.frame(pca_result$x) %>%
-  mutate(Sample = pca_input$Sample,
-         Group = pca_input$Group,
-         LargeGroup = pca_input$LargeGroup)
-explained_var <- pca_result$sdev^2
-explained_var_percent <- explained_var / sum(explained_var) * 100
-
-large_group_colors <- c(
-  "mycelia" = "#009E73",      # green
-  "primordia" = "#0072B2",    # blue
-  "fruiting_body" = "#D55E00" # orange
-)
-
-group_shapes <- c(
-  "1M_sawdust_media" = 16, "2M_sawdust_media" = 17, "2Md_1Ml_sawdust_media" = 15,
-  "2Md_1Ml_sawdust_media_1dc" = 18, "2Md_1Ml_sawdust_media_2dc" = 19,
-  "3M_sawdust_media" = 8, "mycelia_on_agar" = 7,
-  "mycelia_with_primordia_stage0" = 6, "mycelia_with_primordia_stage1" = 4,
-  "primordia_stage0" = 3, "primordia_stage1" = 2, "young_fruiting_body_1" = 0,
-  "young_fruiting_body_2" = 1, "cap_1" = 9, "cap_2" = 10, 
-  "stipe_1" = 5, "stipe_2" = 14, "gil_D0" = 11,
-  "gil_D2" = 12, "gill_D4" = 13
-)
-
-pca_scores$Group <- factor(pca_scores$Group, levels = names(group_shapes))
-pca_scores$LargeGroup <- factor(pca_scores$LargeGroup, levels = names(large_group_colors))
-p <- ggplot(pca_scores, aes(x = PC1, y = PC2, color = LargeGroup, shape = Group)) +
-  geom_point(size = 4.2, stroke = 0.8) +                     
-  theme_minimal(base_size = 12) +                             
-  labs(
-    x = sprintf("PC1 (%.2f%%)", explained_var_percent[1]),
-    y = sprintf("PC2 (%.2f%%)", explained_var_percent[2])
-  ) +
-  scale_color_manual(values = large_group_colors) +
-  scale_shape_manual(values = group_shapes) +
-  theme(
-    axis.title  = element_text(size = 14),
-    axis.text   = element_text(size = 12),
-    legend.title= element_text(size = 12),
-    legend.text = element_text(size = 11),
-    legend.key.size = unit(0.7, "cm")                        
-  ) +
-  guides(color = guide_legend(override.aes = list(size = 4.2)),
-         shape = guide_legend(override.aes = list(size = 4.2)))
 
 ggsave("PCA_plot.png", plot = p, width = 11, height = 8.5, units = "in", dpi = 300, bg = "white")
 ```
