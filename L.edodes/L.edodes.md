@@ -528,35 +528,6 @@ library(topGO)
 library(tidyverse)
 library(Rgraphviz)
 
-# each GO
-go_columns <- c("GO_human", "GO_mouse", "GO_yeast", "GO_uniprot", "GO_from_InterPro_IDs")
-for (go_col in go_columns) {
-  message("Running topGO for: ", go_col)
-  df_bg <- final_df_with_DEGs %>% filter(!is.na(.data[[go_col]]) & .data[[go_col]] != "")
-  gene2go <- df_bg %>%
-    dplyr::select(Node, GO = all_of(go_col)) %>%
-    dplyr::mutate(GO_list = strsplit(GO, ";")) %>%
-    tidyr::unnest(GO_list)
-  gene2GO_map <- split(gene2go$GO_list, gene2go$Node)
-  all_genes <- unique(df_bg$Node)
-  sig_genes <- final_df_with_DEGs %>%
-    filter(only_A == TRUE & Node %in% all_genes) %>%
-    pull(Node)
-  geneList <- factor(as.integer(all_genes %in% sig_genes))
-  names(geneList) <- all_genes
-  GOdata <- new("topGOdata",
-                ontology = "BP",
-                allGenes = geneList,
-                annot = annFUN.gene2GO,
-                gene2GO = gene2GO_map,
-                nodeSize = 5) # run it without this option as well
-  resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-  allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 20)
-  print(allRes)
-  output_file <- paste0("topGO_Fisher_result_", go_col, "_only_A.tsv")
-  write.table(allRes, file = output_file, sep = "\t", quote = FALSE, row.names = FALSE)
-}
-
 # all GO
 gene2go_long <- final_df_with_DEGs %>%
   pivot_longer(cols = all_of(go_columns), names_to = "source", values_to = "GO") %>%
@@ -572,8 +543,8 @@ gene2GO_map <- split(gene2go_long$GO_list, gene2go_long$Node)
 gene2GO_map <- lapply(gene2GO_map, unique)
 
 sig_genes <- final_df_with_DEGs %>%
-  filter(only_B == TRUE, Node %in% all_genes) %>%
-  pull(Node) %>%
+  dplyr::filter(only_A == TRUE, Node %in% all_genes) %>%
+  dplyr::pull(Node) %>%
   unique()
 
 geneList <- factor(as.integer(all_genes %in% sig_genes))
@@ -585,20 +556,30 @@ GOdata <- new("topGOdata",
               annot = annFUN.gene2GO,
               gene2GO = gene2GO_map)
 
-resultFisher <- runTest(GOdata, algorithm = "classic", statistic = "fisher")
-# resultFisher <- runTest(GOdata, algorithm="elim",     statistic="fisher")
-# resultFisher <- runTest(GOdata, algorithm="weight01", statistic="fisher")
+algos <- c("classic", "elim", "weight01")
+results <- list()
+for (algo in algos) {
+  message(sprintf("-- %s Algorithm --", algo))
+  res <- runTest(GOdata, algorithm = algo, statistic = "fisher")
+  results[[algo]] <- res  
+  res_named <- setNames(list(res), paste0(algo, "Fisher"))
+  args <- c(
+    list(GOdata),                          
+    res_named,
+    list(orderBy = paste0(algo, "Fisher"),
+         topNodes = 200, numChar = 1000)
+  )
+  allRes <- do.call(topGO::GenTable, args)
+  write.table(allRes,
+              file = sprintf("topGO_%s_result.tsv", algo),
+              sep = "\t", quote = FALSE, row.names = FALSE)
+  scores <- score(res)
+  png(sprintf("topGO_graph_%sFisher.png", algo), width = 1600, height = 1200, res = 300)
+  showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
+  dev.off()
+}
+lapply(results, function(x) head(score(x)))
 
-allRes <- GenTable(GOdata, classicFisher = resultFisher, topNodes = 200, numChar = 1000)
-
-print(head(allRes, 20))
-write.table(allRes, file = "topGO_weight01_result_mergedGO_onlyA.tsv",
-            sep = "\t", quote = FALSE, row.names = FALSE)
-
-scores <- score(resultFisher) 
-png("topGO_graph_weight01Fisher.png", width = 1600, height = 1200, res = 1200)
-showSigOfNodes(GOdata, scores, firstSigNodes = 5, useInfo = "all")
-dev.off()
 
 # dot plot
 suppressPackageStartupMessages({
@@ -616,8 +597,8 @@ elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200, numChar = 1000)
 weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200, numChar = 1000)
 
 topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
-                          top_n = 20, label_wrap = 40,
-                          width = 8, height = 6, dpi = 300,
+                          top_n = 15, label_wrap = 40,
+                          width = 8, height = 8, dpi = 300,
                           outfile = NULL) {
 
   tab <- GenTable(
@@ -651,12 +632,11 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
     scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
     labs(
       x = "GeneRatio (Significant / Annotated)",
-      y = NULL,
-      title = paste0("topGO dotplot (", method_label, ")")
+      y = NULL
     ) +
     theme_minimal(base_size = 12) +
     theme(
-      axis.text.y = element_text(size = 7)
+      axis.text.y = element_text(size = 15)
     )
 
   if (is.null(outfile)) {
@@ -671,7 +651,6 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
 topgo_dotplot(GOdata, res_classic,  method_label = "classic",  outfile = "topGO_dotplot_classic.png")
 topgo_dotplot(GOdata, res_elim,     method_label = "elim",     outfile = "topGO_dotplot_elim.png")
 topgo_dotplot(GOdata, res_weight01, method_label = "weight01", outfile = "topGO_dotplot_weight01.png")
-
 ```
 ## Blast2GO
 ```
@@ -730,8 +709,8 @@ write.table(crRes, file = "topGO_elim_result_mergedGO_onlyA.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
 
 topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
-                          top_n = 20, label_wrap = 40,
-                          width = 8, height = 6, dpi = 300,
+                          top_n = 15, label_wrap = 40,
+                          width = 8, height = 8, dpi = 300,
                           outfile = NULL) {
 
   tab <- GenTable(
@@ -764,13 +743,11 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
     scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
     labs(
       x = "GeneRatio (Significant / Annotated)",
-      y = NULL,
-      title = paste0("topGO dotplot (", method_label, ")")
+      y = NULL
     ) +
     theme_minimal(base_size = 12) +
     theme(
-      axis.text.y = element_text(size = 9),
-      plot.title  = element_text(hjust = 0)
+      axis.text.y = element_text(size = 15)
     )
 
   if (is.null(outfile)) {
