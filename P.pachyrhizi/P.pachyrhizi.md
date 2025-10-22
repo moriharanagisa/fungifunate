@@ -470,8 +470,8 @@ elRes <- GenTable(GOdata, elimFisher = res_elim, topNodes = 200, numChar = 1000)
 weRes <- GenTable(GOdata, weight01Fisher = res_weight01, topNodes = 200, numChar = 1000)
 
 topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
-                          top_n = 20, label_wrap = 40,
-                          width = 8, height = 6, dpi = 300,
+                          top_n = 15, label_wrap = 40,
+                          width = 8, height = 8, dpi = 300,
                           outfile = NULL) {
 
   tab <- GenTable(
@@ -505,12 +505,11 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
     scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
     labs(
       x = "GeneRatio (Significant / Annotated)",
-      y = NULL,
-      title = paste0("topGO dotplot (", method_label, ")")
+      y = NULL
     ) +
     theme_minimal(base_size = 12) +
     theme(
-      axis.text.y = element_text(size = 7)
+      axis.text.y = element_text(size = 17)
     )
 
   if (is.null(outfile)) {
@@ -584,8 +583,8 @@ write.table(crRes, file = "topGO_elim_result_mergedGO_cluster4.tsv",
             sep = "\t", quote = FALSE, row.names = FALSE)
 
 topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
-                          top_n = 20, label_wrap = 40,
-                          width = 8, height = 6, dpi = 300,
+                          top_n = 15, label_wrap = 40,
+                          width = 8, height = 8, dpi = 300,
                           outfile = NULL) {
 
   tab <- GenTable(
@@ -618,13 +617,11 @@ topgo_dotplot <- function(GOdata, result_obj, method_label = "weight01",
     scale_color_viridis_c(name = expression(-log[10](p)), option = "D") +
     labs(
       x = "GeneRatio (Significant / Annotated)",
-      y = NULL,
-      title = paste0("topGO dotplot (", method_label, ")")
+      y = NULL
     ) +
     theme_minimal(base_size = 12) +
     theme(
-      axis.text.y = element_text(size = 9),
-      plot.title  = element_text(hjust = 0)
+      axis.text.y = element_text(size = 17)
     )
 
   if (is.null(outfile)) {
