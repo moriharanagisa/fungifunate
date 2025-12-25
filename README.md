@@ -28,9 +28,9 @@ fungifunate integrates multiple databases and tools to provide comprehensive fun
 Download the following reference databases:
 ```bash
 # Ensembl protein sequences
-wget http://ftp.ensembl.org/pub/release-110/fasta/homo_sapiens/pep/Homo_sapiens.GRCh38.pep.all.fa.gz
-wget http://ftp.ensembl.org/pub/release-110/fasta/mus_musculus/pep/Mus_musculus.GRCm39.pep.all.fa.gz
-wget http://ftp.ensembl.org/pub/release-110/fasta/saccharomyces_cerevisiae/pep/Saccharomyces_cerevisiae.R64-1-1.pep.all.fa.gz
+wget http://ftp.ensembl.org/pub/release-*/fasta/homo_sapiens/pep/Homo_sapiens.GRCh38.pep.all.fa.gz
+wget http://ftp.ensembl.org/pub/release-*/fasta/mus_musculus/pep/Mus_musculus.GRCm39.pep.all.fa.gz
+wget http://ftp.ensembl.org/pub/release-*/fasta/saccharomyces_cerevisiae/pep/Saccharomyces_cerevisiae.R64-1-1.pep.all.fa.gz
 
 # UniProt Swiss-Prot
 wget https://ftp.uniprot.org/pub/databases/uniprot/current_release/knowledgebase/complete/uniprot_sprot.fasta.gz
@@ -66,29 +66,31 @@ TransDecoder.Predict -t rnaspades_output/transcripts.fasta
 ```
 
 ### Step 3: Homology Search and Domain Annotation
+For detailed information on ggsearch usage, see [SAQE](https://github.com/bonohu/SAQE).
 
 #### 3.1 Homology Search (ggsearch)
 ```bash
 # Search against multiple databases
-ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
-  transcripts.fasta.transdecoder_dir/longest_orfs.pep \
-  Homo_sapiens.GRCh38.pep.all.fa > ggsearch-human.txt
-
-ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
-  transcripts.fasta.transdecoder_dir/longest_orfs.pep \
-  Mus_musculus.GRCm39.pep.all.fa > ggsearch-mouse.txt
-
-ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
-  transcripts.fasta.transdecoder_dir/longest_orfs.pep \
-  Saccharomyces_cerevisiae.R64-1-1.pep.all.fa > ggsearch-yeast.txt
-
-ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
-  transcripts.fasta.transdecoder_dir/longest_orfs.pep \
-  fungidb-68.fasta > ggsearch-fungidb.txt
-
-ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
-  transcripts.fasta.transdecoder_dir/longest_orfs.pep \
-  uniprot_sprot.fasta > ggsearch-uniprot.txt
+# Automatically detect databases
+for dbfile in Homo_sapiens.*.pep.all.fa \
+              Mus_musculus.*.pep.all.fa \
+              Saccharomyces_cerevisiae.*.pep.all.fa \
+              fungidb*.fasta \
+              uniprot_sprot.fasta; do
+    # Extract name from filename
+    case "$dbfile" in
+        Homo_sapiens*)    name="human" ;;
+        Mus_musculus*)    name="mouse" ;;
+        Saccharomyces*)   name="yeast" ;;
+        fungidb*)         name="fungidb" ;;
+        uniprot*)         name="uniprot" ;;
+    esac
+    
+    ggsearch36 -Q -T 96 -d 1 -m 10 -E 0.1 \
+      transcripts.fasta.transdecoder_dir/longest_orfs.pep \
+      "${dbfile}" > "ggsearch-${name}.txt" &
+done
+wait
 ```
 
 #### 3.2 Domain Annotation (InterProScan)
