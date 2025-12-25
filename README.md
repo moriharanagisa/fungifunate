@@ -16,12 +16,12 @@ fungifunate integrates multiple databases and tools to provide comprehensive fun
 - **R** (≥ 4.0) with packages:
   - `tximport`, `DESeq2`, `dplyr`, `tidyr`, `readr`, `ggplot2`, `topGO`, `stringr`, `biomaRt`
 - **Bioinformatics tools**:
-  - [SPAdes](https://github.com/ablab/spades) (for transcriptome assembly)
-  - [TransDecoder](https://github.com/TransDecoder/TransDecoder) (for ORF prediction)
-  - [FASTA36](https://github.com/wrpearson/fasta36) (for ggsearch)
-  - [InterProScan](https://www.ebi.ac.uk/interpro/download/) (for domain annotation)
-  - [Salmon](https://github.com/COMBINE-lab/salmon) (for quantification)
-  - [trim_galore](https://github.com/FelixKrueger/TrimGalore) (optional, for read trimming)
+  - [SPAdes](https://github.com/ablab/spades) 
+  - [TransDecoder](https://github.com/TransDecoder/TransDecoder) 
+  - [FASTA36](https://github.com/wrpearson/fasta36)
+  - [InterProScan](https://www.ebi.ac.uk/interpro/download/) 
+  - [Salmon](https://github.com/COMBINE-lab/salmon)
+  - [trim_galore](https://github.com/FelixKrueger/TrimGalore) 
 
 ### Reference Databases
 
