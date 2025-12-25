@@ -177,18 +177,6 @@ comparisons <- list(
 )
 ```
 
-## Output Files
-
-| File | Description |
-|------|-------------|
-| `annotation_table_with_GO.txt` | Annotations with GO terms from all databases |
-| `annotation_table_final.txt` | Final table with TPM values and DEG results |
-| `PCA_plot.png` | PCA visualization of samples |
-| `deseq2-*.txt` | Differential expression results for each comparison |
-| `topGO_*.txt` | GO enrichment analysis results |
-| `topGO_dotplot_*.png` | Visualization of enriched GO terms |
-
-
 ## Acknowledgments
 
 - [DESeq2](https://bioconductor.org/packages/DESeq2/)
